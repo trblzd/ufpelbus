@@ -55,7 +55,7 @@ export default function AuthPage() {
           />
           
           <button type="submit" style={styles.button}>
-            {isLogin ? 'Entrar' : 'Cadastrar'}
+            {isLogin ? 'ENTRAR' : 'CADASTRAR'}
           </button>
         </form>
 
@@ -77,14 +77,69 @@ export default function AuthPage() {
 }
 
 const styles = {
-  container: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6' },
-  card: { background: 'white', padding: '40px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', width: '320px' },
-  title: { textAlign: 'center', marginBottom: '24px', color: '#1f2937' },
-  form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  input: { padding: '12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '14px' },
-  button: { padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
-  error: { color: '#dc2626', fontSize: '12px', marginTop: '10px', textAlign: 'center' },
-  footer: { marginTop: '20px', textAlign: 'center', fontSize: '13px' },
-  link: { color: '#2563eb', cursor: 'pointer', marginBottom: '10px' },
-  forgot: { color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }
+  container: { 
+    height: '100vh', 
+    display: 'flex', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    background: '#FFFFFF'
+  },
+  card: { 
+    background: '#F9F9F9',
+    padding: '40px', 
+    borderRadius: '24px', 
+    boxShadow: '0 12px 40px rgba(80, 75, 58, 0.12)',
+    width: '320px',
+    border: '1px solid #F0F0F0'
+  },
+  title: { 
+    textAlign: 'center', 
+    marginBottom: '24px', 
+    color: '#3D3B8E',
+    fontWeight: '900',
+    letterSpacing: '-0.5px'
+  },
+  form: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  input: { 
+    padding: '14px', 
+    borderRadius: '12px', 
+    border: '1px solid #E2E8F0', 
+    fontSize: '14px',
+    background: '#FFFFFF',
+    color: '#504B3A', 
+    outline: 'none',
+  },
+  button: { 
+    padding: '14px', 
+    background: '#3D3B8E', 
+    color: 'white', 
+    border: 'none', 
+    borderRadius: '12px', 
+    cursor: 'pointer', 
+    fontWeight: 'bold',
+    fontSize: '14px',
+    transition: '0.3s',
+    boxShadow: '0 4px 12px rgba(61, 59, 142, 0.2)'
+  },
+  error: { 
+    color: '#E63946', 
+    fontSize: '12px', 
+    marginTop: '15px', 
+    textAlign: 'center',
+    fontWeight: '600'
+  },
+  footer: { marginTop: '24px', textAlign: 'center', fontSize: '13px' },
+  link: { 
+    color: '#58BC82', 
+    cursor: 'pointer', 
+    marginBottom: '12px',
+    fontWeight: '700'
+  },
+  forgot: { 
+    color: '#504B3A', 
+    cursor: 'pointer', 
+    textDecoration: 'none',
+    opacity: 0.7,
+    marginTop: '8px'
+  }
 };
