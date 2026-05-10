@@ -46,9 +46,14 @@ export default function App() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#F5F5F5' }}>
-      {/* Passamos a função de sair para dentro da HomePage */}
-      <HomePage onLogout={handleLogout} />
-    </div>
+    <div style={{ 
+  width: '100vw', 
+  height: '100dvh',
+  backgroundColor: '#F9F9F9', 
+  position: 'relative', 
+  overflow: 'hidden' 
+}}>
+  <HomePage handleLogout={handleLogout} />
+</div>
   );
 }

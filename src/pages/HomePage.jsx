@@ -3,15 +3,16 @@ import { db } from '../services/firebase';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation'; 
 import MainPage from '../components/MainPage'; 
-import { traduzirSigla } from '../utils/dicionarioParadas'; 
+import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { 
-  Container, Box, Tabs, Tab, Paper, Typography,
+  Container, Box, Tabs, Tab, Paper, Typography, Menu,
   Button, MenuItem, Select, FormControl, InputLabel, ToggleButtonGroup, ToggleButton, CircularProgress, createTheme, ThemeProvider, List, Chip, ListItemButton
 } from '@mui/material';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
+import EditIcon from '@mui/icons-material/Edit';
 
 const theme = createTheme({
   palette: {
@@ -37,17 +38,6 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     });
     return () => unsub();
   }, [opt]);
-  const formatarRelativo = (timestamp) => {
-  if (!timestamp) return "...";
-  const agora = new Date();
-  const dataPost = timestamp.toDate(); // Converte o Timestamp do Firebase para Date JS
-  const difSegundos = Math.floor((agora - dataPost) / 1000);
-  
-  if (difSegundos < 60) return "Agora mesmo";
-  const minutos = Math.floor(difSegundos / 60);
-  if (minutos < 60) return `Há ${minutos} min`;
-  return `Há ${Math.floor(minutos / 60)}h`;
-};
 
   return (
     <Paper elevation={0} sx={{ mb: 2, border: '1px solid #eee', borderRadius: '16px', overflow: 'hidden' }}>
@@ -96,6 +86,8 @@ export default function HomePage({ onLogout }) {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('config');
   const [viagensAtivasData, setViagensAtivasData] = useState({});
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [siglaSelecionada, setSiglaSelecionada] = useState(null);
 
   const categorias = {
     Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
@@ -112,6 +104,20 @@ export default function HomePage({ onLogout }) {
   };
 
   const normalizarNome = (p) => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim();
+
+  const handleOpenMenu = (event) => setAnchorEl(event.currentTarget);
+  const handleCloseMenu = () => {
+    setAnchorEl(null);
+    setSiglaSelecionada(null);
+  };
+
+  const handleSalvarNome = (sigla, nome) => {
+    const apelidos = JSON.parse(localStorage.getItem("user_apelidos") || "{}");
+    apelidos[sigla] = nome;
+    localStorage.setItem("user_apelidos", JSON.stringify(apelidos));
+    handleCloseMenu();
+    window.location.reload();
+  };
 
   useEffect(() => {
     const unsubIt = onSnapshot(collection(db, "itinerarios"), (snap) => {
@@ -212,19 +218,15 @@ export default function HomePage({ onLogout }) {
         it.horariosaida.forEach(horario => {
           const [h, m] = horario.split(':').map(Number);
           const tempoSaidaMin = (h * 60 + m);
-          const duracao = Number(it.duracaoEstimada) || 60; // Pega do sistema
-          const tempoExpiracao = tempoSaidaMin + duracao + 10; // Margem de 10min
+          const duracao = Number(it.duracaoEstimada) || 60;
+          const tempoExpiracao = tempoSaidaMin + duracao + 10;
 
-          // 1. Verificar se o tempo de circulação expirou
           if (tempoAtualMin > tempoExpiracao) return;
 
-          // 2. Verificar se o ônibus já passou da parada de origem (Lógica para Circulares)
           const tripId = `${it.id}_${horario.replace(':', '')}`;
           const viagem = viagensAtivasData[tripId];
           if (viagem && viagem.ultimaParada) {
             const lastStopIdx = paradas.lastIndexOf(viagem.ultimaParada.toLowerCase().trim());
-            // Só esconde se o ônibus estiver na reta final (índice da última parada maior que a de origem do usuário)
-            // E se já passou de 70% do tempo estimado (garantia para pontos repetidos no início)
             if (lastStopIdx > idxO && (tempoAtualMin - tempoSaidaMin) > (duracao * 0.7)) return;
           }
 
@@ -246,64 +248,85 @@ export default function HomePage({ onLogout }) {
     }
   };
 
-  if (loading) return <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
+  if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
   if (view === 'mapa') return <MainPage itinerario={itinerarioSelecionado} horario={horarioSelecionado} origem={origemId} destino={destinoId} modoApenasConsulta={modo === 'verificar'} voltar={() => setView('config')} categoria={tabLinha} />;
 
   return (
     <ThemeProvider theme={theme}>
-      <Box sx={{ minHeight: '100vh', bgcolor: { xs: 'white', sm: '#F5F5F5' }, display: 'flex', justifyContent: 'center' }}>
-        <Container maxWidth="sm" disableGutters sx={{ display: 'flex', flexDirection: 'column', bgcolor: 'white', height: '100vh', p: 3, boxShadow: { sm: '0 4px 20px rgba(0,0,0,0.1)' } }}>
-          <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 3, textAlign: 'center' }}>BusUFPel</Typography>
+      <Box sx={{ 
+        minHeight: '100dvh', 
+        bgcolor: '#E2E8F0', /* Fundo cinza para as bordas desktop */
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
+        <Container 
+          maxWidth="sm" 
+          disableGutters 
+          sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            bgcolor: 'white', 
+            height: '100dvh', 
+            maxHeight: '100dvh',
+            width: '100%',
+            p: 3, 
+            boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+            overflow: 'hidden' /* Importante para manter o scroll apenas na lista */
+          }}
+        >
+          <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 2, textAlign: 'center', flexShrink: 0 }}>BusUFPel</Typography>
           
-          <ToggleButtonGroup value={modo} exclusive onChange={(e, v) => v && setModo(v)} fullWidth sx={{ mb: 3 }}>
+          <ToggleButtonGroup 
+            value={modo} 
+            exclusive 
+            onChange={(e, v) => v && setModo(v)} 
+            fullWidth 
+            sx={{ mb: 2, flexShrink: 0 }}
+          >
             <ToggleButton value="embarcar" sx={{ fontWeight: 'bold' }}>IR PARA</ToggleButton>
             <ToggleButton value="verificar" sx={{ fontWeight: 'bold' }}>HORÁRIOS</ToggleButton>
           </ToggleButtonGroup>
 
-          <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+          <Box sx={{ 
+            flexGrow: 1, 
+            overflowY: 'auto', 
+            pr: 0.5,
+            /* Esconder scrollbar em navegadores modernos */
+            '&::-webkit-scrollbar': { width: '4px' },
+            '&::-webkit-scrollbar-thumb': { backgroundColor: '#eee', borderRadius: '10px' }
+          }}>
             {modo === 'embarcar' ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {opcoesEncontradas.length === 0 ? (
                   <>
-                    <FormControl fullWidth variant="outlined" sx={{ mb: 1 }}>
-  <InputLabel id="label-origem">Subir em</InputLabel>
-  <Select 
-    labelId="label-origem"
-    label="Subir em" 
-    value={origemId} 
-    onChange={e => setOrigemId(e.target.value)} 
-    sx={{ borderRadius: '12px' }}
-    MenuProps={{ 
-      disableRestoreFocus: true, // Resolve o erro de aria-hidden e foco engolido
-      autoFocus: false,
-      paperprops: { sx: { maxHeight: 300 } } 
-    }}
-  >
-    {idsParadasUnicas.map(id => (
-      <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
-    ))}
-  </Select>
-</FormControl>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel id="label-origem" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Subir em</InputLabel>
+                      <Select 
+                        labelId="label-origem"
+                        value={origemId} 
+                        onChange={e => setOrigemId(e.target.value)} 
+                        sx={{ borderRadius: '12px' }}
+                      >
+                        {idsParadasUnicas.map(id => (
+                          <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
 
-<FormControl fullWidth variant="outlined" sx={{ mb: 1 }}>
-  <InputLabel id="label-destino">Descer em</InputLabel>
-  <Select 
-    labelId="label-destino"
-    label="Descer em" 
-    value={destinoId} 
-    onChange={e => setDestinoId(e.target.value)} 
-    sx={{ borderRadius: '12px' }}
-    MenuProps={{ 
-      disableRestoreFocus: true, 
-      autoFocus: false,
-      paperprops: { sx: { maxHeight: 300 } }
-    }}
-  >
-    {idsParadasUnicas.map(id => (
-      <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
-    ))}
-  </Select>
-</FormControl>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel id="label-destino" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Descer em</InputLabel>
+                      <Select 
+                        labelId="label-destino"
+                        value={destinoId} 
+                        onChange={e => setDestinoId(e.target.value)} 
+                        sx={{ borderRadius: '12px' }}
+                      >
+                        {idsParadasUnicas.map(id => (
+                          <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
 
                     <Button fullWidth variant="contained" onClick={handleBusca} sx={{ py: 2, fontWeight: 'bold', borderRadius: '12px' }}>VERIFICAR ÔNIBUS DISPONÍVEIS</Button>
                   </>
@@ -318,7 +341,9 @@ export default function HomePage({ onLogout }) {
               </Box>
             ) : (
               <Box>
-                <Tabs value={tabLinha} onChange={(e, v) => setTabLinha(v)} variant="scrollable" sx={{ mb: 2 }}>{Object.keys(categorias).map(cat => <Tab key={cat} label={cat} value={cat} sx={{ fontWeight: 'bold' }} />)}</Tabs>
+                <Tabs value={tabLinha} onChange={(e, v) => setTabLinha(v)} variant="scrollable" sx={{ mb: 2, flexShrink: 0 }}>
+                  {Object.keys(categorias).map(cat => <Tab key={cat} label={cat} value={cat} sx={{ fontWeight: 'bold' }} />)}
+                </Tabs>
                 {agrupamentoHorarios.gruposRU.map((g, i) => (
                   <Box key={i} sx={{ mb: 3, p: 2, bgcolor: '#fff9f2', borderRadius: '16px', border: '1px solid #FF8A31' }}>
                     <Typography variant="subtitle2" color="warning.main" fontWeight="bold" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}><RestaurantIcon fontSize="small" /> RU</Typography>
@@ -340,8 +365,37 @@ export default function HomePage({ onLogout }) {
             )}
           </Box>
 
-          <Box sx={{ mt: 'auto', pt: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-             <Button onClick={onLogout} startIcon={<LogoutIcon />} color="error" sx={{ fontWeight: 'bold', textTransform: 'none', opacity: 0.7 }}>Sair da conta</Button>
+          <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+            <Button 
+              onClick={handleOpenMenu} 
+              startIcon={<EditIcon />} 
+              sx={{ color: '#154370', fontWeight: 'bold', textTransform: 'none', fontSize: '0.85rem' }}
+            >
+              Renomear paradas
+            </Button>
+
+            <Menu anchorEl={anchorEl} open={Boolean(anchorEl) && !siglaSelecionada} onClose={handleCloseMenu}>
+              {Object.keys(nomesExtenso).map((sigla) => (
+                <MenuItem key={sigla} onClick={() => setSiglaSelecionada(sigla)}>{sigla.toUpperCase()}</MenuItem>
+              ))}
+            </Menu>
+
+            <Menu anchorEl={anchorEl} open={Boolean(siglaSelecionada)} onClose={handleCloseMenu}>
+              <MenuItem disabled sx={{ fontWeight: 'bold', color: 'primary.main' }}>Escolha o nome para {siglaSelecionada?.toUpperCase()}:</MenuItem>
+              {siglaSelecionada && nomesExtenso[siglaSelecionada].map((nome) => (
+                <MenuItem key={nome} onClick={() => handleSalvarNome(siglaSelecionada, nome)}>{nome}</MenuItem>
+              ))}
+            </Menu>
+
+            <Button 
+              onClick={onLogout} 
+              variant="outlined" 
+              color="error" 
+              startIcon={<LogoutIcon />} 
+              sx={{ borderRadius: '12px', px: 4, fontWeight: 'bold', textTransform: 'none', width: '100%' }}
+            >
+              Sair
+            </Button>
           </Box>
         </Container>
       </Box>

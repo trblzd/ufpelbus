@@ -53,7 +53,6 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     }
   }, [position, paradasData, origem]);
 
-  // Lógica de Tempo Relativo (Atualizado há X min)
   const formatarRelativo = (timestamp) => {
     if (!timestamp) return "...";
     const agora = new Date();
@@ -64,14 +63,13 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     return `Há ${minutos} min`;
   };
 
-  // Lógica de Estimativa (Chega em X min)
   const estimativaChegada = useMemo(() => {
     if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta) return null;
     const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
     const idxAt = lista.indexOf(viagemAtiva.ultimaParada.toLowerCase().trim());
     const idxEu = lista.indexOf(origem.toLowerCase().trim());
     if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
-    return (idxEu - idxAt) * 4; // 4 min médios por parada
+    return (idxEu - idxAt) * 4; 
   }, [viagemAtiva, origem, itinerario, modoApenasConsulta]);
 
   const handleConfirmarEmbarque = async () => {
@@ -133,20 +131,88 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
   if (loading) return <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
 
   return (
-    <Box sx={{ height: '100vh', width: '100vw', position: 'relative' }}>
+    <Box sx={{ height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden' }}>
       
-      {/* LEGENDA DE CORES (INÍCIO -> FIM) */}
-      <Paper elevation={3} sx={{ position: 'absolute', top: 20, left: 20, zIndex: 1000, p: 1.5, borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'rgba(255,255,255,0.9)' }}>
-        <Typography variant="caption" fontWeight="bold" color="primary">SENTIDO DA ROTA</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold' }}>Início</Typography>
-          <Box sx={{ width: 60, height: 6, borderRadius: '3px', background: 'linear-gradient(to right, #0EA503, #FF8A31)' }} />
-          <Typography variant="caption" sx={{ color: '#FF8A31', fontWeight: 'bold' }}>Fim</Typography>
-        </Box>
+      {/* 1. BLOCO DE INFORMAÇÕES (TOPO - 100% LARGURA COM BOX SHADOW) */}
+      <Paper 
+        elevation={2} 
+        sx={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0,
+          pt: 'calc(15px + env(safe-area-inset-top))', 
+          pb: 2,
+          px: 0,
+          zIndex: 1100, 
+          width: '100%', 
+          borderRadius: 0, 
+          textAlign: 'center', 
+          border: 'none',
+          backgroundColor: '#f9f9f9',
+          boxShadow: 2,
+          pointerEvents: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}
+      >
+        <Typography variant="h6" fontWeight="bold" color="primary" sx={{ width: '100%', textAlign: 'center' }}>
+          {categoria} • {horario}
+        </Typography>
+        
+        <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, width: '100%', textAlign: 'center' }}>
+            {viagemAtiva ? (
+              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> • <span style={{color: '#FF8A31', fontWeight: 'bold'}}>{formatarRelativo(viagemAtiva.atualizadoEm)}</span></>
+            ) : "Aguardando atualização..."}
+        </Typography>
+
+        {estimativaChegada && (
+          <Chip label={`Chega em aprox. ${estimativaChegada} min`} color="secondary" size="small" sx={{ mt: 1, fontWeight: 'bold' }} />
+        )}
       </Paper>
 
-      <Button onClick={voltar} variant="contained" startIcon={<ArrowBackIcon />} sx={{ position: 'absolute', top: 20, right: 20, zIndex: 1000, bgcolor: 'white', color: '#154370', borderRadius: '12px', textTransform: 'none', fontWeight: 'bold' }}>Voltar</Button>
-      
+      {/* 2. BOTÃO VOLTAR (ESQUERDA) E LEGENDA (DIREITA) */}
+      <Box sx={{ 
+        position: 'absolute', 
+        top: 'calc(105px + env(safe-area-inset-top))', 
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '90%',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 1100
+      }}>
+        {/* BOTÃO VOLTAR NA ESQUERDA */}
+        <Button 
+          onClick={voltar} 
+          variant="contained" 
+          startIcon={<ArrowBackIcon />} 
+          sx={{ 
+            bgcolor: 'white', 
+            color: '#154370', 
+            borderRadius: '12px', 
+            textTransform: 'none', 
+            fontWeight: 'bold',
+            boxShadow: 2,
+            height: '40px'
+          }}
+        >
+          Voltar
+        </Button>
+
+        {/* LEGENDA NA DIREITA */}
+        <Paper elevation={2} sx={{ p: 1, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, bgcolor: 'rgba(255,255,255,0.95)' }}>
+          <Typography variant="caption" fontWeight="bold" color="primary" sx={{ fontSize: '0.7rem', textAlign: 'center' }}>Sentido da Rota</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold', fontSize: '0.65rem' }}>Início</Typography>
+            <Box sx={{ width: 40, height: 4, borderRadius: '2px', background: 'linear-gradient(to right, #0EA503, #FF8A31)' }} />
+            <Typography variant="caption" sx={{ color: '#FF8A31', fontWeight: 'bold', fontSize: '0.65rem' }}>Fim</Typography>
+          </Box>
+        </Paper>
+      </Box>
+
       <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
         <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
         {renderGradiente()}
@@ -162,18 +228,19 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
         })}
       </MapContainer>
 
+      {/* BOTÕES DE FLUXO NA BASE */}
       {!modoApenasConsulta && statusFluxo === 'inicial' && (
-        <Box sx={{ position: 'absolute', bottom: 155, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
+        <Box sx={{ position: 'absolute', bottom: 'calc(30px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
           <Button variant="contained" disabled={distanciaAteParada > 150} onClick={handleConfirmarEmbarque} sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '55px', fontWeight: 'bold' }}>
-            CONFIRMAR EMBARQUE
+            Confirmar Embarque
           </Button>
         </Box>
       )}
 
       {statusFluxo === 'votando' && (
-        <Box sx={{ position: 'absolute', bottom: 155, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
-          <Paper elevation={10} sx={{ p: 2, borderRadius: '20px', textAlign: 'center', border: '2px solid #FF8A31' }}>
-            <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>LOTAÇÃO DO ÔNIBUS:</Typography>
+        <Box sx={{ position: 'absolute', bottom: 'calc(30px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
+          <Paper elevation={3} sx={{ p: 2, borderRadius: '15px', textAlign: 'center', width: '100%', maxWidth: '300px', margin: '0 auto' }}>
+            <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
             <Stack direction="row" spacing={1} justifyContent="center">
               <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
               <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
@@ -183,19 +250,6 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
         </Box>
       )}
 
-      <Paper elevation={4} sx={{ position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)', p: 2, zIndex: 1000, width: '90%', borderRadius: '20px', textAlign: 'center', border: '2px solid #154370' }}>
-        <Typography variant="h6" fontWeight="bold" color="primary">{categoria} • {horario}</Typography>
-        
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-            {viagemAtiva ? (
-              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> • <span style={{color: '#FF8A31', fontWeight: 'bold'}}>{formatarRelativo(viagemAtiva.atualizadoEm)}</span></>
-            ) : "Aguardando primeiro embarque..."}
-        </Typography>
-
-        {estimativaChegada && (
-          <Chip label={`Chega em aprox. ${estimativaChegada} min`} color="secondary" size="small" sx={{ mt: 1, fontWeight: 'bold' }} />
-        )}
-      </Paper>
     </Box>
   );
 }

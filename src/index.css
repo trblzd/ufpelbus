@@ -3,13 +3,17 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Evita scrolls estranhos no mobile */
+  body, html {
+    margin: 0;
+    padding: 0;
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
+    background-color: #F5F5F5; 
 }
+  #root {
+    height: 100%;
+  }
 
 .leaflet-container {
   width: 100%;
