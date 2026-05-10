@@ -82,20 +82,21 @@ const styles = {
     display: 'flex', 
     alignItems: 'center', 
     justifyContent: 'center', 
-    background: '#FFFFFF'
+    background: '#F9F9F9' // Background padrão do seu tema
   },
   card: { 
-    background: '#F9F9F9',
+    background: '#FFFFFF',
     padding: '40px', 
     borderRadius: '24px', 
-    boxShadow: '0 12px 40px rgba(80, 75, 58, 0.12)',
+    boxShadow: '0 12px 40px rgba(21, 67, 112, 0.08)', // Sombra leve no tom da cor primária
     width: '320px',
-    border: '1px solid #F0F0F0'
+    border: '1px solid #E2E8F0',
+    textAlign: 'center'
   },
   title: { 
     textAlign: 'center', 
     marginBottom: '24px', 
-    color: '#3D3B8E',
+    color: '#154370', // Cor Primary
     fontWeight: '900',
     letterSpacing: '-0.5px'
   },
@@ -106,40 +107,38 @@ const styles = {
     border: '1px solid #E2E8F0', 
     fontSize: '14px',
     background: '#FFFFFF',
-    color: '#504B3A', 
+    color: '#154370', // Texto Primary
     outline: 'none',
   },
   button: { 
     padding: '14px', 
-    background: '#3D3B8E', 
+    background: '#154370', // Cor Primary
     color: 'white', 
     border: 'none', 
     borderRadius: '12px', 
-    cursor: 'pointer', 
+    cursor: 'pointer',
     fontWeight: 'bold',
-    fontSize: '14px',
-    transition: '0.3s',
-    boxShadow: '0 4px 12px rgba(61, 59, 142, 0.2)'
+    fontSize: '16px',
+    transition: 'background 0.2s',
+  },
+  toggleText: { 
+    marginTop: '16px', 
+    fontSize: '14px', 
+    color: '#154370', 
+    cursor: 'pointer',
+    fontWeight: '500'
+  },
+  resetText: { 
+    fontSize: '12px', 
+    color: '#FF8A31', // Cor Warning para recuperação
+    cursor: 'pointer',
+    marginTop: '8px',
+    fontWeight: 'bold'
   },
   error: { 
-    color: '#E63946', 
+    color: '#C4151C', // Cor Error
     fontSize: '12px', 
-    marginTop: '15px', 
-    textAlign: 'center',
-    fontWeight: '600'
-  },
-  footer: { marginTop: '24px', textAlign: 'center', fontSize: '13px' },
-  link: { 
-    color: '#58BC82', 
-    cursor: 'pointer', 
-    marginBottom: '12px',
-    fontWeight: '700'
-  },
-  forgot: { 
-    color: '#504B3A', 
-    cursor: 'pointer', 
-    textDecoration: 'none',
-    opacity: 0.7,
-    marginTop: '8px'
+    marginBottom: '16px',
+    fontWeight: '500'
   }
 };
