@@ -27,41 +27,68 @@ const theme = createTheme({
 });
 
 const BusItem = ({ opt, onClick, safeTraduzir }) => {
-  const [lastStop, setLastStop] = useState(null);
+  const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null });
 
   useEffect(() => {
     const tripId = `${opt.it.id}_${opt.horario.replace(':', '')}`;
     const unsub = onSnapshot(doc(db, "viagens_ativas", tripId), (d) => {
       if (d.exists()) {
-        setLastStop(d.data().ultimaParada);
+        const data = d.data();
+        setViagemInfo({ 
+          lastStop: data.ultimaParada, 
+          lotacao: data.lotacaoAtual 
+        });
+      } else {
+        // Reseta se a viagem não estiver mais ativa
+        setViagemInfo({ lastStop: null, lotacao: null });
       }
     });
     return () => unsub();
   }, [opt]);
+
+  const getEmojiLotacao = (nivel) => {
+    switch (nivel) {
+      case 'lotado': return '🔴';
+      case 'medio': return '🟡';
+      case 'vazio': return '🟢';
+      default: return '🟡';
+    }
+  };
 
   return (
     <Paper elevation={0} sx={{ mb: 2, border: '1px solid #eee', borderRadius: '16px', overflow: 'hidden' }}>
       <ListItemButton onClick={onClick} sx={{ p: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-            <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
-              {opt.cat}
-            </Typography>
-            {opt.maisRapida && (
-              <Chip 
-                label="MAIS RÁPIDA" 
-                size="small" 
-                color="secondary" 
-                sx={{ fontSize: '0.6rem', height: 18, fontWeight: 'bold', ml: 0.5 }} 
-              />
-            )}
-          </Box>
+  <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
+    {opt.cat}
+  </Typography>
+  <Typography 
+    variant="caption" 
+    sx={{ 
+      fontSize: '0.6rem', 
+      color: '#666',
+      fontWeight: '400' 
+    }}
+  >
+  {getEmojiLotacao(viagemInfo.lotacao)}
+  </Typography>
+  
+</Box>
           
           <Typography variant="body2" color="secondary" fontWeight="500">
-            {lastStop 
-              ? `Visto por último em: ${safeTraduzir(lastStop)}` 
-              : "Sem dados da última parada"}
+            {viagemInfo.lastStop 
+              ? `Visto por último em: ${safeTraduzir(viagemInfo.lastStop)}` 
+              : "Sem Informações"}
           </Typography>
+{opt.maisRapida && (
+    <Chip 
+      label="MAIS RÁPIDO" 
+      size="small" 
+      color="secondary" 
+      sx={{ fontSize: '0.6rem', height: 18, fontWeight: 'bold' }} 
+    />
+  )}
         </Box>
         <Typography variant="h5" fontWeight="900" color="primary">
           {opt.horario}

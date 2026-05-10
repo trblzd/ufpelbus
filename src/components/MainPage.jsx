@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet'
 import L from 'leaflet';
 import { db } from '../services/firebase';
 import { collection, getDocs, doc, setDoc, serverTimestamp, onSnapshot, deleteDoc } from 'firebase/firestore';
-import { Box, Button, Typography, Paper, CircularProgress, Stack, Chip } from '@mui/material';
+import { Box, Button, Typography, Paper, CircularProgress, Stack, Chip, IconButton } from '@mui/material';
 import { traduzirSigla } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { useLocation } from '../hooks/useLocation';
@@ -53,6 +53,18 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     }
   }, [position, paradasData, origem]);
 
+  // MOVIDA PARA CIMA PARA EVITAR O ERRO DE INICIALIZAÇÃO
+  const getCoords = (idRaw) => {
+    const id = (typeof idRaw === 'object' ? idRaw.nome : idRaw).toString().toLowerCase().trim();
+    const info = paradasData[id];
+    if (info?.location) {
+      let lat = info.location.latitude || info.location._lat;
+      let lng = info.location.longitude || info.location._long;
+      return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
+    }
+    return null;
+  };
+
   const formatarRelativo = (timestamp) => {
     if (!timestamp) return "...";
     const agora = new Date();
@@ -63,14 +75,40 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     return `Há ${minutos} min`;
   };
 
-  const estimativaChegada = useMemo(() => {
-    if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta) return null;
-    const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
-    const idxAt = lista.indexOf(viagemAtiva.ultimaParada.toLowerCase().trim());
-    const idxEu = lista.indexOf(origem.toLowerCase().trim());
-    if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
-    return (idxEu - idxAt) * 4; 
-  }, [viagemAtiva, origem, itinerario, modoApenasConsulta]);
+// Dentro da MainPage.jsx, substitua o useMemo da estimativaChegada:
+
+const estimativaChegada = useMemo(() => {
+  if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta || Object.keys(paradasData).length === 0) return null;
+
+  const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
+  const idxAt = lista.indexOf(viagemAtiva.ultimaParada.toLowerCase().trim());
+  const idxEu = lista.indexOf(origem.toLowerCase().trim());
+
+  // Se o ônibus já passou da minha parada ou não mapeado
+  if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
+
+  let distanciaTotalMetros = 0;
+
+  // Soma a distância entre todas as paradas do local atual do bus até a minha origem
+  for (let i = idxAt; i < idxEu; i++) {
+    const p1 = getCoords(lista[i]);
+    const p2 = getCoords(lista[i + 1]);
+    
+    if (p1 && p2) {
+      distanciaTotalMetros += calculateDistance(p1[0], p1[1], p2[0], p2[1]);
+    }
+  }
+
+  // Fallback: se o cálculo de distância falhar, usa a média de 4 min por parada
+  if (distanciaTotalMetros === 0) return (idxEu - idxAt) * 4;
+
+  // Conversão: Distância / Velocidade Média
+  // 333 metros/minuto ≈ 20km/h (considerando trânsito e paradas rápidas)
+  const tempoEstimado = Math.ceil(distanciaTotalMetros / 333);
+  
+  // Adiciona uma margem de segurança de 2 minutos
+  return tempoEstimado + 2; 
+}, [viagemAtiva, origem, itinerario, modoApenasConsulta, paradasData]);
 
   const handleConfirmarEmbarque = async () => {
     const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
@@ -95,17 +133,6 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     setStatusFluxo('confirmado');
   };
 
-  const getCoords = (idRaw) => {
-    const id = (typeof idRaw === 'object' ? idRaw.nome : idRaw).toString().toLowerCase().trim();
-    const info = paradasData[id];
-    if (info?.location) {
-      let lat = info.location.latitude || info.location._lat;
-      let lng = info.location.longitude || info.location._long;
-      return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
-    }
-    return null;
-  };
-
   const paradasTrecho = useMemo(() => {
     const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
     if (modoApenasConsulta) return lista;
@@ -128,128 +155,92 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     });
   };
 
+  const getCorLotacao = (nivel) => {
+    if (nivel === 'vazio') return '#0EA503';
+    if (nivel === 'medio') return '#FF8A31';
+    if (nivel === 'lotado') return '#C4151C';
+    return '#757575';
+  };
+
   if (loading) return <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
 
   return (
-    <Box sx={{ height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       
-      {/* 1. BLOCO DE INFORMAÇÕES (TOPO - 100% LARGURA COM BOX SHADOW) */}
-      <Paper 
-        elevation={2} 
-        sx={{ 
-          position: 'absolute', 
-          top: 0, 
-          left: 0, 
-          right: 0,
-          pt: 'calc(15px + env(safe-area-inset-top))', 
-          pb: 2,
-          px: 0,
-          zIndex: 1100, 
-          width: '100%', 
-          borderRadius: 0, 
-          textAlign: 'center', 
-          border: 'none',
-          backgroundColor: '#f9f9f9',
-          boxShadow: 2,
-          pointerEvents: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center'
-        }}
-      >
-        <Typography variant="h6" fontWeight="bold" color="primary" sx={{ width: '100%', textAlign: 'center' }}>
+      <Paper elevation={2} sx={{ pt: 'calc(15px + env(safe-area-inset-top))', pb: 2, zIndex: 1100, width: '100%', borderRadius: 0, backgroundColor: '#f9f9f9', boxShadow: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+        <Typography variant="h6" fontWeight="bold" color="primary">
           {categoria} • {horario}
         </Typography>
         
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, width: '100%', textAlign: 'center' }}>
+        <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
             {viagemAtiva ? (
               <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> • <span style={{color: '#FF8A31', fontWeight: 'bold'}}>{formatarRelativo(viagemAtiva.atualizadoEm)}</span></>
             ) : "Aguardando atualização..."}
         </Typography>
 
-        {estimativaChegada && (
-          <Chip label={`Chega em aprox. ${estimativaChegada} min`} color="secondary" size="small" sx={{ mt: 1, fontWeight: 'bold' }} />
-        )}
+        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+          {estimativaChegada && (
+            <Chip label={`Estimativa: em até ${estimativaChegada} min`} color="secondary" size="small" sx={{ fontWeight: 'bold' }} />
+          )}
+
+          {viagemAtiva?.lotacaoAtual && (
+            <Chip label="Lotação" size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: getCorLotacao(viagemAtiva.lotacaoAtual), '& .MuiChip-label': { px: 2 } }} />
+          )}
+        </Stack>
       </Paper>
 
-      {/* 2. BOTÃO VOLTAR (ESQUERDA) E LEGENDA (DIREITA) */}
-      <Box sx={{ 
-        position: 'absolute', 
-        top: 'calc(105px + env(safe-area-inset-top))', 
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '90%',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        zIndex: 1100
-      }}>
-        {/* BOTÃO VOLTAR NA ESQUERDA */}
-        <Button 
-          onClick={voltar} 
-          variant="contained" 
-          startIcon={<ArrowBackIcon />} 
-          sx={{ 
-            bgcolor: 'white', 
-            color: '#154370', 
-            borderRadius: '12px', 
-            textTransform: 'none', 
-            fontWeight: 'bold',
-            boxShadow: 2,
-            height: '40px'
-          }}
-        >
-          Voltar
-        </Button>
+      <Box sx={{ flexGrow: 1, position: 'relative', width: '100%' }}>
+        <Box sx={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', width: '92%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1100, pointerEvents: 'none' }}>
+          <IconButton onClick={voltar} sx={{ bgcolor: 'white', color: '#154370', borderRadius: '12px', boxShadow: 2, width: '40px', height: '40px', pointerEvents: 'auto', '&:hover': { bgcolor: '#f5f5f5' } }}>
+            <ArrowBackIcon />
+          </IconButton>
 
-        {/* LEGENDA NA DIREITA */}
-        <Paper elevation={2} sx={{ p: 1, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, bgcolor: 'rgba(255,255,255,0.95)' }}>
-          <Typography variant="caption" fontWeight="bold" color="primary" sx={{ fontSize: '0.7rem', textAlign: 'center' }}>Sentido da Rota</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold', fontSize: '0.65rem' }}>Início</Typography>
-            <Box sx={{ width: 40, height: 4, borderRadius: '2px', background: 'linear-gradient(to right, #0EA503, #FF8A31)' }} />
-            <Typography variant="caption" sx={{ color: '#FF8A31', fontWeight: 'bold', fontSize: '0.65rem' }}>Fim</Typography>
-          </Box>
-        </Paper>
-      </Box>
-
-      <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-        {renderGradiente()}
-        {paradasTrecho.map((id, i) => {
-          const c = getCoords(id);
-          if (!c) return null;
-          const eOrigem = id === origem.toLowerCase().trim();
-          return (
-            <Marker key={i} position={c} icon={eOrigem ? iconEmbarque : iconIntermediario}>
-              <Popup><Typography variant="body2" fontWeight="bold">{traduzirSigla(id)}</Typography></Popup>
-            </Marker>
-          );
-        })}
-      </MapContainer>
-
-      {/* BOTÕES DE FLUXO NA BASE */}
-      {!modoApenasConsulta && statusFluxo === 'inicial' && (
-        <Box sx={{ position: 'absolute', bottom: 'calc(30px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
-          <Button variant="contained" disabled={distanciaAteParada > 150} onClick={handleConfirmarEmbarque} sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '55px', fontWeight: 'bold' }}>
-            Confirmar Embarque
-          </Button>
-        </Box>
-      )}
-
-      {statusFluxo === 'votando' && (
-        <Box sx={{ position: 'absolute', bottom: 'calc(30px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
-          <Paper elevation={3} sx={{ p: 2, borderRadius: '15px', textAlign: 'center', width: '100%', maxWidth: '300px', margin: '0 auto' }}>
-            <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
-            <Stack direction="row" spacing={1} justifyContent="center">
-              <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
-              <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
-              <Button size="small" variant="contained" sx={{ bgcolor: '#C4151C' }} onClick={() => handleVotarLotacao('lotado')}>Cheio</Button>
-            </Stack>
+          <Paper elevation={2} sx={{ p: 1, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, bgcolor: 'rgba(255,255,255,0.95)', pointerEvents: 'auto' }}>
+            <Typography variant="caption" fontWeight="bold" color="primary" sx={{ fontSize: '0.7rem' }}>Sentido da Rota</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold', fontSize: '0.65rem' }}>Início</Typography>
+              <Box sx={{ width: 40, height: 4, borderRadius: '2px', background: 'linear-gradient(to right, #0EA503, #FF8A31)' }} />
+              <Typography variant="caption" sx={{ color: '#FF8A31', fontWeight: 'bold', fontSize: '0.65rem' }}>Fim</Typography>
+            </Box>
           </Paper>
         </Box>
-      )}
 
+        <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          {renderGradiente()}
+          {paradasTrecho.map((id, i) => {
+            const c = getCoords(id);
+            if (!c) return null;
+            const eOrigem = id === origem.toLowerCase().trim();
+            return (
+              <Marker key={i} position={c} icon={eOrigem ? iconEmbarque : iconIntermediario}>
+                <Popup><Typography variant="body2" fontWeight="bold">{traduzirSigla(id)}</Typography></Popup>
+              </Marker>
+            );
+          })}
+        </MapContainer>
+
+        {!modoApenasConsulta && statusFluxo === 'inicial' && (
+          <Box sx={{ position: 'absolute', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
+            <Button variant="contained" disabled={distanciaAteParada > 150} onClick={handleConfirmarEmbarque} sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '55px', fontWeight: 'bold' }}>
+              Confirmar Embarque
+            </Button>
+          </Box>
+        )}
+        
+        {statusFluxo === 'votando' && (
+          <Box sx={{ position: 'absolute', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
+            <Paper elevation={3} sx={{ p: 2, borderRadius: '15px', textAlign: 'center', width: '100%', maxWidth: '300px', margin: '0 auto' }}>
+              <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
+              <Stack direction="row" spacing={1} justifyContent="center">
+                <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
+                <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
+                <Button size="small" variant="contained" sx={{ bgcolor: '#C4151C' }} onClick={() => handleVotarLotacao('lotado')}>Cheio</Button>
+              </Stack>
+            </Paper>
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }
