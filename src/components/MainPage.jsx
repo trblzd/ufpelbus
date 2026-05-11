@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { db } from '../services/firebase';
-import { collection, getDocs, doc, setDoc, serverTimestamp, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, serverTimestamp, onSnapshot, deleteDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { Box, Button, Typography, Paper, CircularProgress, Stack, Chip, IconButton } from '@mui/material';
 import { traduzirSigla } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
@@ -29,6 +29,18 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
   const [statusFluxo, setStatusFluxo] = useState('inicial'); 
   const [distanciaAteParada, setDistanciaAteParada] = useState(null);
 
+  const getCoords = (idRaw) => {
+    if (!idRaw) return null;
+    const id = (typeof idRaw === 'object' ? idRaw.nome : idRaw).toString().toLowerCase().trim();
+    const info = paradasData[id];
+    if (info?.location) {
+      let lat = Number(info.location.latitude || info.location._lat);
+      let lng = Number(info.location.longitude || info.location._long);
+      return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
+    }
+    return null;
+  };
+
   useEffect(() => {
     getDocs(collection(db, "paradas")).then(s => {
       const mapeamento = {};
@@ -40,6 +52,7 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
     const unsub = onSnapshot(doc(db, "viagens_ativas", tripId), (d) => {
         if (d.exists()) setViagemAtiva(d.data());
+        else setViagemAtiva(null);
     });
     return () => unsub();
   }, [itinerario, horario]);
@@ -47,23 +60,46 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
   useEffect(() => {
     const oriKey = origem?.toLowerCase().trim();
     if (position && paradasData[oriKey]) {
-      const p = paradasData[oriKey].location;
-      const d = calculateDistance(position.lat, position.lng, p.latitude || p._lat, p.longitude || p._long);
-      setDistanciaAteParada(d * 1000); 
+      const coords = getCoords(oriKey);
+      if (coords) {
+        const d = calculateDistance(position.lat, position.lng, coords[0], coords[1]);
+        setDistanciaAteParada(d); 
+      }
     }
   }, [position, paradasData, origem]);
 
-  // MOVIDA PARA CIMA PARA EVITAR O ERRO DE INICIALIZAÇÃO
-  const getCoords = (idRaw) => {
-    const id = (typeof idRaw === 'object' ? idRaw.nome : idRaw).toString().toLowerCase().trim();
-    const info = paradasData[id];
-    if (info?.location) {
-      let lat = info.location.latitude || info.location._lat;
-      let lng = info.location.longitude || info.location._long;
-      return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
-    }
-    return null;
-  };
+  useEffect(() => {
+    // CORREÇÃO: Se estiver no modo apenas consulta, não encerra a rota por tempo
+    if (modoApenasConsulta || !itinerario?.duracaoEstimada || !horario) return;
+
+    const verificarExpiracao = async () => {
+      const [horas, minutos] = horario.split(':').map(Number);
+      const agora = new Date();
+      
+      const horarioInicio = new Date();
+      horarioInicio.setHours(horas, minutos, 0, 0);
+
+      // Margem de 10 minutos após a duração estimada para garantir que quem está no ônibus consiga finalizar
+      const margemSeguranca = 10;
+      const horarioTermino = new Date(horarioInicio.getTime() + (itinerario.duracaoEstimada + margemSeguranca) * 60000);
+
+      if (agora > horarioTermino) {
+        const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
+        try {
+          // Só deleta e volta se NÃO for modo consulta
+          await deleteDoc(doc(db, "viagens_ativas", tripId));
+          console.log("Rota encerrada por tempo limite atingido.");
+          voltar();
+        } catch (e) {
+          console.error("Erro ao encerrar rota expirada:", e);
+        }
+      }
+    };
+
+    verificarExpiracao();
+    const interval = setInterval(verificarExpiracao, 60000);
+    return () => clearInterval(interval);
+  }, [itinerario, horario, voltar, modoApenasConsulta]);
 
   const formatarRelativo = (timestamp) => {
     if (!timestamp) return "...";
@@ -71,67 +107,83 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     const dataPost = timestamp.toDate();
     const difSegundos = Math.floor((agora - dataPost) / 1000);
     if (difSegundos < 60) return "Agora mesmo";
-    const minutos = Math.floor(difSegundos / 60);
-    return `Há ${minutos} min`;
+    return `Há ${Math.floor(difSegundos / 60)} min`;
   };
 
-// Dentro da MainPage.jsx, substitua o useMemo da estimativaChegada:
+  const infoLotacao = useMemo(() => {
+    if (!viagemAtiva?.historicoLotacao || viagemAtiva.historicoLotacao.length === 0) return null;
+    const agoraMs = Date.now();
+    const cincoMinutosMs = 5 * 60 * 1000;
+    const votosRecentes = viagemAtiva.historicoLotacao.filter(voto => {
+      const dataVoto = voto.data?.toDate ? voto.data.toDate().getTime() : (voto.data?.seconds * 1000 || agoraMs);
+      return (agoraMs - dataVoto) <= cincoMinutosMs;
+    });
+    if (votosRecentes.length === 0) return null;
+    const soma = votosRecentes.reduce((acc, curr) => acc + curr.valor, 0);
+    const media = parseFloat((soma / votosRecentes.length).toFixed(1));
+    let label = "Vazio"; let cor = "#0EA503";
+    if (media > 4.0) { label = "Lotado"; cor = "#C4151C"; }
+    else if (media > 2.5) { label = "Médio"; cor = "#FF8A31"; }
+    return { media, label, cor };
+  }, [viagemAtiva]);
 
 const estimativaChegada = useMemo(() => {
   if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta || Object.keys(paradasData).length === 0) return null;
-
+  
   const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
-  const idxAt = lista.indexOf(viagemAtiva.ultimaParada.toLowerCase().trim());
-  const idxEu = lista.indexOf(origem.toLowerCase().trim());
+  
+  const idxAt = viagemAtiva.indiceParada || 0;
+  const meuDestino = origem.toLowerCase().trim();
 
-  // Se o ônibus já passou da minha parada ou não mapeado
+  const idxEu = lista.indexOf(meuDestino, idxAt);
+
   if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
 
   let distanciaTotalMetros = 0;
-
-  // Soma a distância entre todas as paradas do local atual do bus até a minha origem
   for (let i = idxAt; i < idxEu; i++) {
     const p1 = getCoords(lista[i]);
     const p2 = getCoords(lista[i + 1]);
-    
     if (p1 && p2) {
       distanciaTotalMetros += calculateDistance(p1[0], p1[1], p2[0], p2[1]);
     }
   }
 
-  // Fallback: se o cálculo de distância falhar, usa a média de 4 min por parada
-  if (distanciaTotalMetros === 0) return (idxEu - idxAt) * 4;
-
-  // Conversão: Distância / Velocidade Média
-  // 333 metros/minuto ≈ 20km/h (considerando trânsito e paradas rápidas)
-  const tempoEstimado = Math.ceil(distanciaTotalMetros / 333);
-  
-  // Adiciona uma margem de segurança de 2 minutos
-  return tempoEstimado + 2; 
+  return Math.ceil(distanciaTotalMetros / 333) + (idxEu - idxAt);
 }, [viagemAtiva, origem, itinerario, modoApenasConsulta, paradasData]);
 
-  const handleConfirmarEmbarque = async () => {
-    const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
-    const paradasNormalizadas = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
-    const isUltimaParada = paradasNormalizadas[paradasNormalizadas.length - 1] === origem.toLowerCase().trim();
 
-    if (isUltimaParada) {
-      await deleteDoc(doc(db, "viagens_ativas", tripId));
-      voltar();
-    } else {
-      await setDoc(doc(db, "viagens_ativas", tripId), { 
-        ultimaParada: origem, 
-        atualizadoEm: serverTimestamp() 
-      }, { merge: true });
-      setStatusFluxo('votando');
-    }
-  };
+const handleConfirmarEmbarque = async () => {
+  const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
+  const paradasNormalizadas = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
+  
+  const indiceAnterior = viagemAtiva?.indiceParada || 0;
 
-  const handleVotarLotacao = async (nivel) => {
+  const meuIndiceAtual = paradasNormalizadas.indexOf(origem.toLowerCase().trim(), indiceAnterior);
+
+  const isUltimaParadaAbsoluta = meuIndiceAtual === paradasNormalizadas.length - 1;
+
+  if (isUltimaParadaAbsoluta) {
+    await deleteDoc(doc(db, "viagens_ativas", tripId));
+    voltar();
+  } else {
+    await setDoc(doc(db, "viagens_ativas", tripId), { 
+      ultimaParada: origem,
+      indiceParada: meuIndiceAtual, // <--- CRUCIAL
+      atualizadoEm: serverTimestamp() 
+    }, { merge: true });
+    setStatusFluxo('votando');
+  }
+};
+  const handleVotarLotacao = async (status) => {
     const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
-    await setDoc(doc(db, "viagens_ativas", tripId), { lotacaoAtual: nivel, atualizadoEm: serverTimestamp() }, { merge: true });
+    const valores = { 'vazio': 1, 'medio': 3, 'lotado': 5 };
+    await updateDoc(doc(db, "viagens_ativas", tripId), {
+      historicoLotacao: arrayUnion({ valor: valores[status], data: new Date() }),
+      atualizadoEm: serverTimestamp()
+    });
     setStatusFluxo('confirmado');
   };
+
 
   const paradasTrecho = useMemo(() => {
     const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
@@ -155,91 +207,87 @@ const estimativaChegada = useMemo(() => {
     });
   };
 
-  const getCorLotacao = (nivel) => {
-    if (nivel === 'vazio') return '#0EA503';
-    if (nivel === 'medio') return '#FF8A31';
-    if (nivel === 'lotado') return '#C4151C';
-    return '#757575';
-  };
-
   if (loading) return <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
 
-  return (
-    <Box sx={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+return (
+    <Box sx={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       
-      <Paper elevation={2} sx={{ pt: 'calc(15px + env(safe-area-inset-top))', pb: 2, zIndex: 1100, width: '100%', borderRadius: 0, backgroundColor: '#f9f9f9', boxShadow: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+      {/* CABEÇALHO COM CATEGORIA DINÂMICA */}
+      <Paper elevation={2} sx={{ pt: 'calc(15px + env(safe-area-inset-top))', pb: 2, zIndex: 1100, borderRadius: 0, backgroundColor: '#f9f9f9', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
         <Typography variant="h6" fontWeight="bold" color="primary">
-          {categoria} • {horario}
+          {categoria || "Rota"} • {horario}
         </Typography>
-        
         <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
             {viagemAtiva ? (
-              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> • <span style={{color: '#FF8A31', fontWeight: 'bold'}}>{formatarRelativo(viagemAtiva.atualizadoEm)}</span></>
+              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b></>
             ) : "Aguardando atualização..."}
         </Typography>
-
+        
         <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
           {estimativaChegada && (
-            <Chip label={`Estimativa: em até ${estimativaChegada} min`} color="secondary" size="small" sx={{ fontWeight: 'bold' }} />
+            <Chip label={`Chegada em ~${estimativaChegada} min`} color="secondary" size="small" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
           )}
+          {infoLotacao && <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />}
+        </Stack>
 
-          {viagemAtiva?.lotacaoAtual && (
-            <Chip label="Lotação" size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: getCorLotacao(viagemAtiva.lotacaoAtual), '& .MuiChip-label': { px: 2 } }} />
-          )}
+        {/* LEGENDA DE CORES (RESTAURADA) */}
+        <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgb(14, 165, 3)' }} />
+            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>INÍCIO</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgb(255, 138, 49)' }} />
+            <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>FIM</Typography>
+          </Box>
         </Stack>
       </Paper>
 
       <Box sx={{ flexGrow: 1, position: 'relative', width: '100%' }}>
-        <Box sx={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', width: '92%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1100, pointerEvents: 'none' }}>
-          <IconButton onClick={voltar} sx={{ bgcolor: 'white', color: '#154370', borderRadius: '12px', boxShadow: 2, width: '40px', height: '40px', pointerEvents: 'auto', '&:hover': { bgcolor: '#f5f5f5' } }}>
-            <ArrowBackIcon />
-          </IconButton>
+        <IconButton onClick={voltar} sx={{ position: 'absolute', top: 16, left: 16, zIndex: 1100, bgcolor: 'white', boxShadow: 2, '&:hover': { bgcolor: '#f0f0f0' } }}>
+          <ArrowBackIcon />
+        </IconButton>
 
-          <Paper elevation={2} sx={{ p: 1, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, bgcolor: 'rgba(255,255,255,0.95)', pointerEvents: 'auto' }}>
-            <Typography variant="caption" fontWeight="bold" color="primary" sx={{ fontSize: '0.7rem' }}>Sentido da Rota</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold', fontSize: '0.65rem' }}>Início</Typography>
-              <Box sx={{ width: 40, height: 4, borderRadius: '2px', background: 'linear-gradient(to right, #0EA503, #FF8A31)' }} />
-              <Typography variant="caption" sx={{ color: '#FF8A31', fontWeight: 'bold', fontSize: '0.65rem' }}>Fim</Typography>
-            </Box>
-          </Paper>
-        </Box>
-
-        <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+        <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%', zIndex: 1 }}>
           <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
           {renderGradiente()}
           {paradasTrecho.map((id, i) => {
             const c = getCoords(id);
             if (!c) return null;
-            const eOrigem = id === origem.toLowerCase().trim();
             return (
-              <Marker key={i} position={c} icon={eOrigem ? iconEmbarque : iconIntermediario}>
+              <Marker key={i} position={c} icon={id === origem.toLowerCase().trim() ? iconEmbarque : iconIntermediario}>
                 <Popup><Typography variant="body2" fontWeight="bold">{traduzirSigla(id)}</Typography></Popup>
               </Marker>
             );
           })}
         </MapContainer>
 
-        {!modoApenasConsulta && statusFluxo === 'inicial' && (
-          <Box sx={{ position: 'absolute', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
-            <Button variant="contained" disabled={distanciaAteParada > 150} onClick={handleConfirmarEmbarque} sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '55px', fontWeight: 'bold' }}>
-              Confirmar Embarque
-            </Button>
+        {/* CONTROLES FLUTUANTES - Z-INDEX GARANTIDO PARA NÃO SUMIR */}
+        <Box sx={{ position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, width: '90%', maxWidth: '400px', pointerEvents: 'none' }}>
+          <Box sx={{ pointerEvents: 'auto' }}>
+            {!modoApenasConsulta && statusFluxo === 'inicial' && (
+              <Button 
+                variant="contained" 
+                disabled={distanciaAteParada > 80} 
+                onClick={handleConfirmarEmbarque} 
+                sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '60px', fontWeight: 'bold', boxShadow: 3 }}
+              >
+                {distanciaAteParada > 80 ? `Longe (${Math.round(distanciaAteParada)}m)` : 'Confirmar Embarque'}
+              </Button>
+            )}
+
+            {statusFluxo === 'votando' && (
+              <Paper elevation={4} sx={{ p: 2, borderRadius: '15px', textAlign: 'center' }}>
+                <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
+                <Stack direction="row" spacing={1} justifyContent="center">
+                  <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
+                  <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
+                  <Button size="small" variant="contained" sx={{ bgcolor: '#C4151C' }} onClick={() => handleVotarLotacao('lotado')}>Cheio</Button>
+                </Stack>
+              </Paper>
+            )}
           </Box>
-        )}
-        
-        {statusFluxo === 'votando' && (
-          <Box sx={{ position: 'absolute', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: '90%' }}>
-            <Paper elevation={3} sx={{ p: 2, borderRadius: '15px', textAlign: 'center', width: '100%', maxWidth: '300px', margin: '0 auto' }}>
-              <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
-              <Stack direction="row" spacing={1} justifyContent="center">
-                <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
-                <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
-                <Button size="small" variant="contained" sx={{ bgcolor: '#C4151C' }} onClick={() => handleVotarLotacao('lotado')}>Cheio</Button>
-              </Stack>
-            </Paper>
-          </Box>
-        )}
+        </Box>
       </Box>
     </Box>
   );

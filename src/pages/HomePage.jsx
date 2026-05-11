@@ -3,7 +3,7 @@ import { db } from '../services/firebase';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation'; 
 import MainPage from '../components/MainPage'; 
-import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
+import { traduzirSigla, nomesExtenso, getFavoritos } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { 
   Container, Box, Tabs, Tab, Paper, Typography, Menu,
@@ -13,6 +13,8 @@ import RestaurantIcon from '@mui/icons-material/Restaurant';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import EditIcon from '@mui/icons-material/Edit';
+import PersonalizationPage from './PersonalizationPage';
+
 
 const theme = createTheme({
   palette: {
@@ -117,6 +119,7 @@ export default function HomePage({ onLogout }) {
   const [siglaSelecionada, setSiglaSelecionada] = useState(null);
 
   const categorias = {
+    teste: ['teste'],
     Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
     Capão: ['anglocapao', 'capaoanglo', 'capaodireito', 'capaodireitobr', 'capaofamedanglo', 'capaolyceu', 'cotadacapao', 'direitocapao', 'famedcapao', 'lyceucapao'],
     ESEF: ['madeireira11', 'madeireira13', 'madeireira15', 'madeireira16', 'madeireira1820', 'madeireira20', 'madeireira21', 'madeireira7', 'madeireira9'],
@@ -275,14 +278,14 @@ export default function HomePage({ onLogout }) {
     }
   };
 
-  if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
+if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
   if (view === 'mapa') return <MainPage itinerario={itinerarioSelecionado} horario={horarioSelecionado} origem={origemId} destino={destinoId} modoApenasConsulta={modo === 'verificar'} voltar={() => setView('config')} categoria={tabLinha} />;
 
   return (
     <ThemeProvider theme={theme}>
       <Box sx={{ 
         minHeight: '100dvh', 
-        bgcolor: '#E2E8F0', /* Fundo cinza para as bordas desktop */
+        bgcolor: '#E2E8F0', 
         display: 'flex', 
         justifyContent: 'center',
         alignItems: 'center'
@@ -299,7 +302,7 @@ export default function HomePage({ onLogout }) {
             width: '100%',
             p: 3, 
             boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-            overflow: 'hidden' /* Importante para manter o scroll apenas na lista */
+            overflow: 'hidden'
           }}
         >
           <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 2, textAlign: 'center', flexShrink: 0 }}>BusUFPel</Typography>
@@ -319,12 +322,13 @@ export default function HomePage({ onLogout }) {
             flexGrow: 1, 
             overflowY: 'auto', 
             pr: 0.5,
-            /* Esconder scrollbar em navegadores modernos */
+            display: 'flex', // Adicionado para permitir alinhamento interno
+            flexDirection: 'column',
             '&::-webkit-scrollbar': { width: '4px' },
             '&::-webkit-scrollbar-thumb': { backgroundColor: '#eee', borderRadius: '10px' }
           }}>
             {modo === 'embarcar' ? (
-              <Box sx={{display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, justifyContent: 'center' }}>
                 {opcoesEncontradas.length === 0 ? (
                   <>
                     <FormControl fullWidth variant="outlined">

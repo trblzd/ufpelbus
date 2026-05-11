@@ -13,12 +13,7 @@ export const nomesExtenso = {
   direito: ["Direito"],
   esef: ["ESEF", "Escola Superior de Educação Física"],
   famed: ["Faculdade de Medicina", "FaMed"],
-  faurb: [
-    "Faculdade de Arquitetura e Urbanismo",
-    "FaUrb",
-    "Centro de Artes",
-    "CA",
-  ],
+  faurb: ["Faculdade de Arquitetura e Urbanismo", "FaUrb", "Centro de Artes"],
   "hospital-escola": ["Hospital Escola", "IFSul"],
   laneira: ["Laneira"],
   lyceu: ["Lyceu", "Mercado Público", "Praça Cel. Pedro Osório"],
@@ -37,9 +32,10 @@ export const traduzirSigla = (sigla) => {
   return opcoes ? opcoes[0] : sigla.toUpperCase();
 };
 
-export const salvarApelido = (sigla, novoNome) => {
-  const siglaLimpa = sigla.toLowerCase().trim();
-  const apelidos = JSON.parse(localStorage.getItem("user_apelidos") || "{}");
-  apelidos[siglaLimpa] = novoNome;
-  localStorage.setItem("user_apelidos", JSON.stringify(apelidos));
+export const getFavoritos = () => {
+  return JSON.parse(localStorage.getItem("user_favoritos") || "[]");
+};
+
+export const salvarFavoritos = (lista) => {
+  localStorage.setItem("user_favoritos", JSON.stringify(lista));
 };
