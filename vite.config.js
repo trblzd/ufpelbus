@@ -11,7 +11,6 @@ export default defineConfig({
       ".ngrok-free.app",
       ".ngrok-free.dev",
     ],
-    // Garante que o servidor aceite conexões externas
     host: true,
     strictPort: true,
   },

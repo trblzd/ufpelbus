@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/firebase';
-import { collection, onSnapshot, doc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation'; 
 import MainPage from '../components/MainPage'; 
-import { traduzirSigla, nomesExtenso, getFavoritos } from '../utils/dicionarioParadas';
+import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { 
   Container, Box, Tabs, Tab, Paper, Typography, Menu,
@@ -14,22 +14,22 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import EditIcon from '@mui/icons-material/Edit';
 import PersonalizationPage from './PersonalizationPage';
-
+import { getAuth, signOut } from 'firebase/auth';
 
 const theme = createTheme({
   palette: {
-    primary: { main: '#154370' }, 
+    primary: { main: '#00418F' }, 
     secondary: { main: '#0EA503' }, 
     warning: { main: '#FF8A31' }, 
     error: { main: '#C4151C' },
     background: { default: '#F9F9F9' },
-    text: { primary: '#154370' },
+    text: { primary: '#00418F' },
   },
   shape: { borderRadius: 16 },
 });
 
 const BusItem = ({ opt, onClick, safeTraduzir }) => {
-  const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null });
+  const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null, atualizadoEm: null });
 
   useEffect(() => {
     const tripId = `${opt.it.id}_${opt.horario.replace(':', '')}`;
@@ -38,17 +38,39 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
         const data = d.data();
         setViagemInfo({ 
           lastStop: data.ultimaParada, 
-          lotacao: data.lotacaoAtual 
+          lotacao: data.lotacaoAtual,
+          atualizadoEm: data.atualizadoEm
         });
       } else {
-        // Reseta se a viagem não estiver mais ativa
-        setViagemInfo({ lastStop: null, lotacao: null });
+        setViagemInfo({ lastStop: null, lotacao: null, atualizadoEm: null });
       }
     });
     return () => unsub();
   }, [opt]);
 
+  const isExpirado = useMemo(() => {
+    if (!viagemInfo.atualizadoEm || !opt.it?.duracaoEstimada) return false;
+    
+    const agora = new Date();
+    const dataPost = viagemInfo.atualizadoEm.toDate 
+      ? viagemInfo.atualizadoEm.toDate() 
+      : new Date(viagemInfo.atualizadoEm.seconds * 1000);
+      
+    const diferencaMinutos = Math.floor((agora - dataPost) / 60000);
+    return diferencaMinutos > Number(opt.it.duracaoEstimada);
+  }, [viagemInfo.atualizadoEm, opt.it]);
+
+  const formatarRelativo = (timestamp) => {
+    if (!timestamp) return "";
+    const agora = new Date();
+    const dataPost = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+    const difSegundos = Math.floor((agora - dataPost) / 1000);
+    if (difSegundos < 60) return "há menos de 1 minuto";
+    return `há ${Math.floor(difSegundos / 60)} minutos`;
+  };
+
   const getEmojiLotacao = (nivel) => {
+    if (isExpirado) return '🟡'; 
     switch (nivel) {
       case 'lotado': return '🔴';
       case 'medio': return '🟡';
@@ -57,40 +79,35 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     }
   };
 
+  const temInformacaoAtiva = viagemInfo.lastStop && !isExpirado;
+
   return (
     <Paper elevation={0} sx={{ mb: 2, border: '1px solid #eee', borderRadius: '16px', overflow: 'hidden' }}>
       <ListItemButton onClick={onClick} sx={{ p: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-  <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
-    {opt.cat}
-  </Typography>
-  <Typography 
-    variant="caption" 
-    sx={{ 
-      fontSize: '0.6rem', 
-      color: '#666',
-      fontWeight: '400' 
-    }}
-  >
-  {getEmojiLotacao(viagemInfo.lotacao)}
-  </Typography>
-  
-</Box>
+            <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
+              {opt.cat}
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#666', fontWeight: '400' }}>
+              {getEmojiLotacao(viagemInfo.lotacao)}
+            </Typography>
+          </Box>
           
           <Typography variant="body2" color="secondary" fontWeight="500">
-            {viagemInfo.lastStop 
-              ? `Visto por último em: ${safeTraduzir(viagemInfo.lastStop)}` 
+            {temInformacaoAtiva
+              ? `Visto em: ${safeTraduzir(viagemInfo.lastStop)} ${formatarRelativo(viagemInfo.atualizadoEm)}` 
               : "Sem Informações"}
           </Typography>
-{opt.maisRapida && (
-    <Chip 
-      label="MAIS RÁPIDO" 
-      size="small" 
-      color="secondary" 
-      sx={{ fontSize: '0.6rem', height: 18, fontWeight: 'bold' }} 
-    />
-  )}
+
+          {opt.maisRapida && temInformacaoAtiva && (
+            <Chip 
+              label="MAIS RÁPIDO" 
+              size="small" 
+              color="secondary" 
+              sx={{ fontSize: '0.6rem', height: 18, fontWeight: 'bold', mt: 0.5 }} 
+            />
+          )}
         </Box>
         <Typography variant="h5" fontWeight="900" color="primary">
           {opt.horario}
@@ -112,15 +129,17 @@ export default function HomePage({ onLogout }) {
   const [opcoesEncontradas, setOpcoesEncontradas] = useState([]); 
   const [itinerarioSelecionado, setItinerarioSelecionado] = useState(null);
   const [horarioSelecionado, setHorarioSelecionado] = useState('');
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState('Anglo');
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('config');
   const [viagensAtivasData, setViagensAtivasData] = useState({});
-  const [anchorEl, setAnchorEl] = useState(null);
-  const [siglaSelecionada, setSiglaSelecionada] = useState(null);
+  const [favoritos, setFavoritos] = useState([]);
 
-  const categorias = {
-    teste: ['teste'],
-    Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
+  const auth = getAuth();
+  const usuarioLogado = auth.currentUser;
+
+  const categoriesConfig = {
+    Anglo: ['anglo', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
     Capão: ['anglocapao', 'capaoanglo', 'capaodireito', 'capaodireitobr', 'capaofamedanglo', 'capaolyceu', 'cotadacapao', 'direitocapao', 'famedcapao', 'lyceucapao'],
     ESEF: ['madeireira11', 'madeireira13', 'madeireira15', 'madeireira16', 'madeireira1820', 'madeireira20', 'madeireira21', 'madeireira7', 'madeireira9'],
     FaMed: ['madeireira11', 'madeireira13', 'madeireira15', 'madeireira16', 'madeireira18', 'madeireira1820', 'madeireira20', 'madeireira21', 'madeireira22', 'madeireira7', 'madeireira9', 'anglofamed', 'anglocapao', 'capaofamedanglo', 'cotadacapao', 'direitocapao', 'lyceucapao'],  
@@ -135,18 +154,13 @@ export default function HomePage({ onLogout }) {
 
   const normalizarNome = (p) => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim();
 
-  const handleOpenMenu = (event) => setAnchorEl(event.currentTarget);
-  const handleCloseMenu = () => {
-    setAnchorEl(null);
-    setSiglaSelecionada(null);
-  };
-
-  const handleSalvarNome = (sigla, nome) => {
-    const apelidos = JSON.parse(localStorage.getItem("user_apelidos") || "{}");
-    apelidos[sigla] = nome;
-    localStorage.setItem("user_apelidos", JSON.stringify(apelidos));
-    handleCloseMenu();
-    window.location.reload();
+  const handleFirebaseLogout = async () => {
+    try {
+      await signOut(auth);
+      if (onLogout) onLogout();
+    } catch (error) {
+      console.error("Erro ao realizar logout no Firebase:", error);
+    }
   };
 
   useEffect(() => {
@@ -180,16 +194,30 @@ export default function HomePage({ onLogout }) {
       setViagensAtivasData(data);
     });
 
-    return () => { unsubIt(); unsubParadas(); unsubViagens(); };
-  }, []);
+    let unsubFavoritos = () => {};
+    if (usuarioLogado) {
+      unsubFavoritos = onSnapshot(doc(db, "usuarios", usuarioLogado.uid, "favoritos", "dados"), (docSnap) => {
+        if (docSnap.exists()) {
+          setFavoritos(docSnap.data().lista || []);
+        } else {
+          const locais = JSON.parse(localStorage.getItem("user_favoritos") || "[]");
+          setFavoritos(locais);
+        }
+      });
+    }
 
+    return () => { unsubIt(); unsubParadas(); unsubViagens(); unsubFavoritos(); };
+  }, [usuarioLogado]);
+
+  // CORREÇÃO GEOGRÁFICA: Compara as distâncias de forma estrita assim que as coordenadas e a localização entram no estado
   useEffect(() => {
-    if (position && Object.keys(paradasCoordenadas).length > 0 && idsParadasUnicas.length > 0 && !origemId) {
+    if (position && position.lat && position.lng && Object.keys(paradasCoordenadas).length > 0 && idsParadasUnicas.length > 0) {
       let menorDist = Infinity;
       let paradaVencedora = '';
+
       idsParadasUnicas.forEach(idSelect => {
         const coord = paradasCoordenadas[idSelect];
-        if (coord) {
+        if (coord && coord.lat && coord.lng) {
           const d = calculateDistance(position.lat, position.lng, coord.lat, coord.lng);
           if (d < menorDist) {
             menorDist = d;
@@ -197,14 +225,17 @@ export default function HomePage({ onLogout }) {
           }
         }
       });
-      if (paradaVencedora && menorDist < 2.5) setOrigemId(paradaVencedora);
+
+      if (paradaVencedora && paradaVencedora !== origemId) {
+        setOrigemId(paradaVencedora);
+      }
     }
-  }, [position, paradasCoordenadas, idsParadasUnicas, origemId]);
+  }, [position, paradasCoordenadas, idsParadasUnicas]);
 
   const agrupamentoHorarios = useMemo(() => {
     const gruposNormal = {};
     const gruposRU = {};
-    const itinerariosDaCategoria = todosItinerarios.filter(it => categorias[tabLinha]?.includes(it.id));
+    const itinerariosDaCategoria = todosItinerarios.filter(it => categoriesConfig[tabLinha]?.includes(it.id));
 
     itinerariosDaCategoria.forEach(it => {
       const paradas = it.paradas.map(normalizarNome);
@@ -265,7 +296,7 @@ export default function HomePage({ onLogout }) {
               it, horario, 
               numParadas: idxD - idxO, 
               tempoRef: tempoSaidaMin, 
-              cat: Object.keys(categorias).find(c => categorias[c].includes(it.id)) || "Rota" 
+              cat: Object.keys(categoriesConfig).find(c => categoriesConfig[c].includes(it.id)) || "Rota" 
             });
           }
         });
@@ -278,8 +309,16 @@ export default function HomePage({ onLogout }) {
     }
   };
 
-if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
-  if (view === 'mapa') return <MainPage itinerario={itinerarioSelecionado} horario={horarioSelecionado} origem={origemId} destino={destinoId} modoApenasConsulta={modo === 'verificar'} voltar={() => setView('config')} categoria={tabLinha} />;
+  if (loading || !position || !position.lat || !position.lng) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#E2E8F0' }}>
+        <CircularProgress />
+        <Typography variant="body2" color="textSecondary" fontWeight="500">Obtendo sua localização...</Typography>
+      </Box>
+    );
+  }
+  if (view === 'mapa') return <MainPage itinerario={itinerarioSelecionado} horario={horarioSelecionado} origem={origemId} destino={destinoId} modoApenasConsulta={modo === 'verificar'} voltar={() => setView('config')} categoria={categoriaSelecionada} />;
+  if (view === 'personalizar') return <PersonalizationPage idsParadas={idsParadasUnicas} onVoltar={() => setView('config')} />;
 
   return (
     <ThemeProvider theme={theme}>
@@ -305,7 +344,7 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
             overflow: 'hidden'
           }}
         >
-          <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 2, textAlign: 'center', flexShrink: 0 }}>BusUFPel</Typography>
+          <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 2, textAlign: 'center', flexShrink: 0 }}>busepel</Typography>
           
           <ToggleButtonGroup 
             value={modo} 
@@ -322,7 +361,7 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
             flexGrow: 1, 
             overflowY: 'auto', 
             pr: 0.5,
-            display: 'flex', // Adicionado para permitir alinhamento interno
+            display: 'flex',
             flexDirection: 'column',
             '&::-webkit-scrollbar': { width: '4px' },
             '&::-webkit-scrollbar-thumb': { backgroundColor: '#eee', borderRadius: '10px' }
@@ -339,9 +378,24 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
                         onChange={e => setOrigemId(e.target.value)} 
                         sx={{ borderRadius: '12px' }}
                       >
-                        {idsParadasUnicas.map(id => (
-                          <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
-                        ))}
+                        {idsParadasUnicas.map(id => {
+                          const isFav = favoritos.includes(id);
+                          return (
+                            <MenuItem 
+                              key={id} 
+                              value={id}
+                              sx={{ 
+                                backgroundColor: isFav ? '#EBF4FF' : 'transparent',
+                                fontWeight: isFav ? 'bold' : 'normal',
+                                '&:hover': {
+                                  backgroundColor: isFav ? '#D1E6FF' : '#F5F5F5'
+                                }
+                              }}
+                            >
+                              {safeTraduzir(id)} {isFav && '⭐'}
+                            </MenuItem>
+                          );
+                        })}
                       </Select>
                     </FormControl>
 
@@ -353,9 +407,24 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
                         onChange={e => setDestinoId(e.target.value)} 
                         sx={{ borderRadius: '12px' }}
                       >
-                        {idsParadasUnicas.map(id => (
-                          <MenuItem key={id} value={id}>{safeTraduzir(id)}</MenuItem>
-                        ))}
+                        {idsParadasUnicas.map(id => {
+                          const isFav = favoritos.includes(id);
+                          return (
+                            <MenuItem 
+                              key={id} 
+                              value={id}
+                              sx={{ 
+                                backgroundColor: isFav ? '#EBF4FF' : 'transparent',
+                                fontWeight: isFav ? 'bold' : 'normal',
+                                '&:hover': {
+                                  backgroundColor: isFav ? '#D1E6FF' : '#F5F5F5'
+                                }
+                              }}
+                            >
+                              {safeTraduzir(id)} {isFav && '⭐'}
+                            </MenuItem>
+                          );
+                        })}
                       </Select>
                     </FormControl>
 
@@ -364,7 +433,17 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
                 ) : (
                   <List>
                     {opcoesEncontradas.map((opt, i) => (
-                      <BusItem key={i} opt={opt} safeTraduzir={safeTraduzir} onClick={() => { setItinerarioSelecionado(opt.it); setHorarioSelecionado(opt.horario); setView('mapa'); }} />
+                      <BusItem 
+                        key={i} 
+                        opt={opt} 
+                        safeTraduzir={safeTraduzir} 
+                        onClick={() => { 
+                          setItinerarioSelecionado(opt.it); 
+                          setHorarioSelecionado(opt.horario); 
+                          setCategoriaSelecionada(opt.cat); 
+                          setView('mapa'); 
+                        }} 
+                      />
                     ))}
                     <Button fullWidth onClick={() => setOpcoesEncontradas([])} sx={{ mt: 1, fontWeight: 'bold' }}>VOLTAR PARA BUSCA</Button>
                   </List>
@@ -373,14 +452,29 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
             ) : (
               <Box>
                 <Tabs value={tabLinha} onChange={(e, v) => setTabLinha(v)} variant="scrollable" sx={{ mb: 2, flexShrink: 0 }}>
-                  {Object.keys(categorias).map(cat => <Tab key={cat} label={cat} value={cat} sx={{ fontWeight: 'bold' }} />)}
+                  {Object.keys(categoriesConfig).map(cat => <Tab key={cat} label={cat} value={cat} sx={{ fontWeight: 'bold' }} />)}
                 </Tabs>
                 {agrupamentoHorarios.gruposRU.map((g, i) => (
                   <Box key={i} sx={{ mb: 3, p: 2, bgcolor: '#fff9f2', borderRadius: '16px', border: '1px solid #FF8A31' }}>
                     <Typography variant="subtitle2" color="warning.main" fontWeight="bold" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}><RestaurantIcon fontSize="small" /> RU</Typography>
                     <Typography variant="caption" color="textSecondary" fontWeight="bold">{g.label}</Typography>
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                      {g.horarios.map((obj, j) => <Button key={j} size="small" variant="contained" color="warning" onClick={() => { setItinerarioSelecionado(obj.it); setHorarioSelecionado(obj.h); setView('mapa'); }}>{obj.h}</Button>)}
+                      {g.horarios.map((obj, j) => (
+                        <Button 
+                          key={j} 
+                          size="small" 
+                          variant="contained" 
+                          color="warning" 
+                          onClick={() => { 
+                            setItinerarioSelecionado(obj.it); 
+                            setHorarioSelecionado(obj.h); 
+                            setCategoriaSelecionada(tabLinha); 
+                            setView('mapa'); 
+                          }}
+                        >
+                          {obj.h}
+                        </Button>
+                      ))}
                     </Box>
                   </Box>
                 ))}
@@ -388,7 +482,22 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
                   <Box key={i} sx={{ mb: 3 }}>
                     <Typography variant="subtitle2" color="primary" fontWeight="bold">{g.label}</Typography>
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                      {g.horarios.map((obj, j) => <Button key={j} size="small" variant="outlined" sx={{ fontWeight: 'bold', borderRadius: '8px' }} onClick={() => { setItinerarioSelecionado(obj.it); setHorarioSelecionado(obj.h); setView('mapa'); }}>{obj.h}</Button>)}
+                      {g.horarios.map((obj, j) => (
+                        <Button 
+                          key={j} 
+                          size="small" 
+                          variant="outlined" 
+                          sx={{ fontWeight: 'bold', borderRadius: '8px' }} 
+                          onClick={() => { 
+                            setItinerarioSelecionado(obj.it); 
+                            setHorarioSelecionado(obj.h); 
+                            setCategoriaSelecionada(tabLinha); 
+                            setView('mapa'); 
+                          }}
+                        >
+                          {obj.h}
+                        </Button>
+                      ))}
                     </Box>
                   </Box>
                 ))}
@@ -398,28 +507,15 @@ if (loading) return <Box sx={{ display: 'flex', height: '100dvh', alignItems: 'c
 
           <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             <Button 
-              onClick={handleOpenMenu} 
+              onClick={() => setView('personalizar')} 
               startIcon={<EditIcon />} 
-              sx={{ color: '#154370', fontWeight: 'bold', textTransform: 'none', fontSize: '0.85rem' }}
+              sx={{ color: '#00418F', fontWeight: 'bold', textTransform: 'none', fontSize: '0.85rem' }}
             >
-              Renomear paradas
+              Personalizar
             </Button>
 
-            <Menu anchorEl={anchorEl} open={Boolean(anchorEl) && !siglaSelecionada} onClose={handleCloseMenu}>
-              {Object.keys(nomesExtenso).map((sigla) => (
-                <MenuItem key={sigla} onClick={() => setSiglaSelecionada(sigla)}>{sigla.toUpperCase()}</MenuItem>
-              ))}
-            </Menu>
-
-            <Menu anchorEl={anchorEl} open={Boolean(siglaSelecionada)} onClose={handleCloseMenu}>
-              <MenuItem disabled sx={{ fontWeight: 'bold', color: 'primary.main' }}>Escolha o nome para {siglaSelecionada?.toUpperCase()}:</MenuItem>
-              {siglaSelecionada && nomesExtenso[siglaSelecionada].map((nome) => (
-                <MenuItem key={nome} onClick={() => handleSalvarNome(siglaSelecionada, nome)}>{nome}</MenuItem>
-              ))}
-            </Menu>
-
             <Button 
-              onClick={onLogout} 
+              onClick={handleFirebaseLogout} 
               variant="outlined" 
               color="error" 
               startIcon={<LogoutIcon />} 

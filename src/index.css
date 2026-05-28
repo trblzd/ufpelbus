@@ -9,7 +9,8 @@
     height: 100dvh;
     width: 100vw;
     overflow: hidden;
-    background-color: #F5F5F5; 
+    background-color: #F9F9F9;
+    font-family: 'Inter', sans-serif;
 }
   #root {
     height: 100%;

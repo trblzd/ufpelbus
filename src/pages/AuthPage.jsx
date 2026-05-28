@@ -55,16 +55,16 @@ export default function AuthPage() {
           />
           
           <button type="submit" style={styles.button}>
-            {isLogin ? 'ENTRAR' : 'CADASTRAR'}
+            {isLogin ? 'Entrar' : 'Cadastrar  '}
           </button>
         </form>
 
         {error && <p style={styles.error}>{error}</p>}
 
         <div style={styles.footer}>
-          <p onClick={() => setIsLogin(!isLogin)} style={styles.link}>
-            {isLogin ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
-          </p>
+          {/* <p onClick={() => setIsLogin(!isLogin)} style={styles.link}>
+            {isLogin ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'} }=
+          </p> */}
           {isLogin && (
             <p onClick={handleResetPassword} style={styles.forgot}>
               Esqueceu a senha?
@@ -96,7 +96,7 @@ const styles = {
   title: { 
     textAlign: 'center', 
     marginBottom: '24px', 
-    color: '#154370', // Cor Primary
+    color: '#00418F', // Cor Primary
     fontWeight: '900',
     letterSpacing: '-0.5px'
   },
@@ -107,12 +107,12 @@ const styles = {
     border: '1px solid #E2E8F0', 
     fontSize: '14px',
     background: '#FFFFFF',
-    color: '#154370', // Texto Primary
+    color: '#00418F', // Texto Primary
     outline: 'none',
   },
   button: { 
     padding: '14px', 
-    background: '#154370', // Cor Primary
+    background: '#00418F', // Cor Primary
     color: 'white', 
     border: 'none', 
     borderRadius: '12px', 
@@ -124,20 +124,19 @@ const styles = {
   toggleText: { 
     marginTop: '16px', 
     fontSize: '14px', 
-    color: '#154370', 
+    color: '#00418F', 
     cursor: 'pointer',
     fontWeight: '500'
   },
-  resetText: { 
-    fontSize: '12px', 
-    color: '#FF8A31', // Cor Warning para recuperação
+  link: { 
+    fontSize: '14px', 
+    color: '#FF8A31', 
     cursor: 'pointer',
-    marginTop: '8px',
+    marginTop: '14px',
     fontWeight: 'bold'
   },
-  error: { 
-    color: '#C4151C', // Cor Error
-    fontSize: '12px', 
+  forgot: { 
+    color: '#00418F',
     marginBottom: '16px',
     fontWeight: '500'
   }

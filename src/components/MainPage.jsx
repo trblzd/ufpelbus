@@ -69,7 +69,6 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
   }, [position, paradasData, origem]);
 
   useEffect(() => {
-    // CORREÇÃO: Se estiver no modo apenas consulta, não encerra a rota por tempo
     if (modoApenasConsulta || !itinerario?.duracaoEstimada || !horario) return;
 
     const verificarExpiracao = async () => {
@@ -79,14 +78,12 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
       const horarioInicio = new Date();
       horarioInicio.setHours(horas, minutos, 0, 0);
 
-      // Margem de 10 minutos após a duração estimada para garantir que quem está no ônibus consiga finalizar
       const margemSeguranca = 10;
       const horarioTermino = new Date(horarioInicio.getTime() + (itinerario.duracaoEstimada + margemSeguranca) * 60000);
 
       if (agora > horarioTermino) {
         const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
         try {
-          // Só deleta e volta se NÃO for modo consulta
           await deleteDoc(doc(db, "viagens_ativas", tripId));
           console.log("Rota encerrada por tempo limite atingido.");
           voltar();
@@ -127,53 +124,53 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     return { media, label, cor };
   }, [viagemAtiva]);
 
-const estimativaChegada = useMemo(() => {
-  if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta || Object.keys(paradasData).length === 0) return null;
-  
-  const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
-  
-  const idxAt = viagemAtiva.indiceParada || 0;
-  const meuDestino = origem.toLowerCase().trim();
+  const estimativaChegada = useMemo(() => {
+    if (!viagemAtiva || !origem || !itinerario || modoApenasConsulta || Object.keys(paradasData).length === 0) return null;
+    
+    const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
+    
+    const idxAt = viagemAtiva.indiceParada || 0;
+    const meuDestino = origem.toLowerCase().trim();
 
-  const idxEu = lista.indexOf(meuDestino, idxAt);
+    const idxEu = lista.indexOf(meuDestino, idxAt);
 
-  if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
+    if (idxAt === -1 || idxEu === -1 || idxAt >= idxEu) return null;
 
-  let distanciaTotalMetros = 0;
-  for (let i = idxAt; i < idxEu; i++) {
-    const p1 = getCoords(lista[i]);
-    const p2 = getCoords(lista[i + 1]);
-    if (p1 && p2) {
-      distanciaTotalMetros += calculateDistance(p1[0], p1[1], p2[0], p2[1]);
+    let distanciaTotalMetros = 0;
+    for (let i = idxAt; i < idxEu; i++) {
+      const p1 = getCoords(lista[i]);
+      const p2 = getCoords(lista[i + 1]);
+      if (p1 && p2) {
+        distanciaTotalMetros += calculateDistance(p1[0], p1[1], p2[0], p2[1]);
+      }
     }
-  }
 
-  return Math.ceil(distanciaTotalMetros / 333) + (idxEu - idxAt);
-}, [viagemAtiva, origem, itinerario, modoApenasConsulta, paradasData]);
+    return Math.ceil(distanciaTotalMetros / 333) + (idxEu - idxAt);
+  }, [viagemAtiva, origem, itinerario, modoApenasConsulta, paradasData]);
 
+  const handleConfirmarEmbarque = async () => {
+    const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
+    const paradasNormalizadas = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
+    
+    const indiceAnterior = viagemAtiva?.indiceParada || 0;
 
-const handleConfirmarEmbarque = async () => {
-  const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
-  const paradasNormalizadas = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
-  
-  const indiceAnterior = viagemAtiva?.indiceParada || 0;
+    const meuIndiceAtual = paradasNormalizadas.indexOf(origem.toLowerCase().trim(), indiceAnterior);
 
-  const meuIndiceAtual = paradasNormalizadas.indexOf(origem.toLowerCase().trim(), indiceAnterior);
+    const isUltimaParadaAbsoluta = meuIndiceAtual === paradasNormalizadas.length - 1;
 
-  const isUltimaParadaAbsoluta = meuIndiceAtual === paradasNormalizadas.length - 1;
+    if (isUltimaParadaAbsoluta) {
+      await deleteDoc(doc(db, "viagens_ativas", tripId));
+      voltar();
+    } else {
+      await setDoc(doc(db, "viagens_ativas", tripId), { 
+        ultimaParada: origem,
+        indiceParada: meuIndiceAtual,
+        atualizadoEm: serverTimestamp() 
+      }, { merge: true });
+      setStatusFluxo('votando');
+    }
+  };
 
-  if (isUltimaParadaAbsoluta) {
-    await deleteDoc(doc(db, "viagens_ativas", tripId));
-    voltar();
-  } else {
-    await setDoc(doc(db, "viagens_ativas", tripId), { 
-      ultimaParada: origem,
-      indiceParada: meuIndiceAtual, // <--- CRUCIAL
-      atualizadoEm: serverTimestamp() 
-    }, { merge: true });
-    setStatusFluxo('votando');
-  }
-};
   const handleVotarLotacao = async (status) => {
     const tripId = `${itinerario.id}_${horario.replace(':', '')}`;
     const valores = { 'vazio': 1, 'medio': 3, 'lotado': 5 };
@@ -183,7 +180,6 @@ const handleConfirmarEmbarque = async () => {
     });
     setStatusFluxo('confirmado');
   };
-
 
   const paradasTrecho = useMemo(() => {
     const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
@@ -208,29 +204,32 @@ const handleConfirmarEmbarque = async () => {
   };
 
   if (loading) return <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}><CircularProgress /></Box>;
-
 return (
     <Box sx={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       
-      {/* CABEÇALHO COM CATEGORIA DINÂMICA */}
+      {/* CABEÇALHO ALTERADO COM HIFEN (-) E REGRAS DE EXIBIÇÃO CONDICIONAIS */}
       <Paper elevation={2} sx={{ pt: 'calc(15px + env(safe-area-inset-top))', pb: 2, zIndex: 1100, borderRadius: 0, backgroundColor: '#f9f9f9', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
         <Typography variant="h6" fontWeight="bold" color="primary">
-          {categoria || "Rota"} • {horario}
+          {categoria || "Rota"} - {horario}
         </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-            {viagemAtiva ? (
-              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b></>
-            ) : "Aguardando atualização..."}
-        </Typography>
+
+        {/* EXIBIÇÃO CONDICIONAL: Só renderiza se NÃO for o modo unicamente de consulta */}
+        {!modoApenasConsulta && (
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+              {viagemAtiva ? (
+                <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> {formatarRelativo(viagemAtiva.atualizadoEm)}</>
+              ) : "Aguardando atualização..."}
+          </Typography>
+        )}
         
         <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+          {/* ALTERADO: Texto alterado para 'Estimativa: X minutos' */}
           {estimativaChegada && (
-            <Chip label={`Chegada em ~${estimativaChegada} min`} color="secondary" size="small" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
+            <Chip label={`Estimativa: ${estimativaChegada} minutos`} color="secondary" size="small" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
           )}
           {infoLotacao && <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />}
         </Stack>
 
-        {/* LEGENDA DE CORES (RESTAURADA) */}
         <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgb(14, 165, 3)' }} />
@@ -262,7 +261,6 @@ return (
           })}
         </MapContainer>
 
-        {/* CONTROLES FLUTUANTES - Z-INDEX GARANTIDO PARA NÃO SUMIR */}
         <Box sx={{ position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, width: '90%', maxWidth: '400px', pointerEvents: 'none' }}>
           <Box sx={{ pointerEvents: 'auto' }}>
             {!modoApenasConsulta && statusFluxo === 'inicial' && (
