@@ -23,10 +23,17 @@ export const nomesExtenso = {
   "ru-centro": ["Restaurante Universitário Centro", "RU Centro"],
 };
 
+let _cacheApelidos = null;
+const getApelidos = () => {
+  if (!_cacheApelidos)
+    _cacheApelidos = JSON.parse(localStorage.getItem("user_apelidos") || "{}");
+  return _cacheApelidos;
+};
+
 export const traduzirSigla = (sigla) => {
   if (!sigla || sigla === "undefined") return "Parada Desconhecida";
   const siglaLimpa = sigla.toLowerCase().trim();
-  const apelidos = JSON.parse(localStorage.getItem("user_apelidos") || "{}");
+  const apelidos = getApelidos();
   if (apelidos[siglaLimpa]) return apelidos[siglaLimpa];
   const opcoes = nomesExtenso[siglaLimpa];
   return opcoes ? opcoes[0] : sigla.toUpperCase();

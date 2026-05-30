@@ -125,7 +125,7 @@ const handleSalvarTodasFavoritas = async () => {
                   <ListItemText 
                     primary={id.toUpperCase()} 
                     secondary={`Apelido: ${apelidoAtual}`} 
-                    secondaryTypographyProps={{ style: { color: '#666', fontWeight: '500' } }}
+                    secondarytypographyprops={{ style: { color: '#666', fontWeight: '500' } }}
                   />
                   <Select 
                     size="small"
@@ -173,7 +173,7 @@ const handleSalvarTodasFavoritas = async () => {
                     primary={traduzirSigla(id)} 
                     primaryTypographyProps={{ style: { fontWeight: isFav ? 'bold' : 'normal' } }}
                     secondary={id.toUpperCase()}
-                    secondaryTypographyProps={{ style: { color: isFav ? '#EEE' : '#888' } }}
+                    secondarytypographyprops={{ style: { color: isFav ? '#EEE' : '#888' } }}
                   />
                 </ListItem>
               );
