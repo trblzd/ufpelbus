@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation'; 
@@ -118,7 +118,11 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
 };
 
 export default function HomePage({ onLogout }) {
-  const { position } = useLocation(); 
+  // Controle do GPS
+  const [gpsAtivo, setGpsAtivo] = useState(true);
+  const { position } = useLocation({ ativo: gpsAtivo });
+  const jaPreencheuParadaRef = useRef(false);
+  
   const [modo, setModo] = useState('embarcar'); 
   const [todosItinerarios, setTodosItinerarios] = useState([]);
   const [paradasCoordenadas, setParadasCoordenadas] = useState({});
@@ -134,6 +138,7 @@ export default function HomePage({ onLogout }) {
   const [view, setView] = useState('config');
   const [viagensAtivasData, setViagensAtivasData] = useState({});
   const [favoritos, setFavoritos] = useState([]);
+  const [apelidosRefreshKey, setApelidosRefreshKey] = useState(0);
 
   const auth = getAuth();
   const usuarioLogado = auth.currentUser;
@@ -162,6 +167,36 @@ export default function HomePage({ onLogout }) {
       console.error("Erro ao realizar logout no Firebase:", error);
     }
   };
+
+  const handleApelidosSalvos = () => {
+    setApelidosRefreshKey(prev => prev + 1);
+  };
+
+  // Reativa GPS manualmente
+  const handleReativarGPS = () => {
+    setGpsAtivo(true);
+    jaPreencheuParadaRef.current = false;
+    setOrigemId(''); // Limpa para forçar nova detecção
+  };
+
+  // Controla quando desligar o GPS
+  useEffect(() => {
+    // Se já tem uma parada selecionada e o GPS ainda está ativo
+    if (origemId && origemId !== '' && gpsAtivo && !jaPreencheuParadaRef.current) {
+      jaPreencheuParadaRef.current = true;
+      // Desliga o GPS após 3 segundos (tempo para o usuário ver a parada preenchida)
+      setTimeout(() => {
+        setGpsAtivo(false);
+        console.log("[GPS] Desligado após preencher parada mais próxima.");
+      }, 3000);
+    }
+    
+    // Reativa GPS ao voltar para config sem parada selecionada
+    if (view === 'config' && (!origemId || origemId === '') && !gpsAtivo) {
+      setGpsAtivo(true);
+      jaPreencheuParadaRef.current = false;
+    }
+  }, [origemId, view, gpsAtivo]);
 
   useEffect(() => {
     const unsubIt = onSnapshot(collection(db, "itinerarios"), (snap) => {
@@ -209,8 +244,9 @@ export default function HomePage({ onLogout }) {
     return () => { unsubIt(); unsubParadas(); unsubViagens(); unsubFavoritos(); };
   }, [usuarioLogado]);
 
-  // CORREÇÃO GEOGRÁFICA: Compara as distâncias de forma estrita assim que as coordenadas e a localização entram no estado
+  // Só executa detecção de parada se GPS estiver ativo
   useEffect(() => {
+    if (!gpsAtivo) return;
     if (position && position.lat && position.lng && Object.keys(paradasCoordenadas).length > 0 && idsParadasUnicas.length > 0) {
       let menorDist = Infinity;
       let paradaVencedora = '';
@@ -230,7 +266,7 @@ export default function HomePage({ onLogout }) {
         setOrigemId(paradaVencedora);
       }
     }
-  }, [position, paradasCoordenadas, idsParadasUnicas]);
+  }, [position, paradasCoordenadas, idsParadasUnicas, gpsAtivo, origemId]);
 
   const agrupamentoHorarios = useMemo(() => {
     const gruposNormal = {};
@@ -253,14 +289,19 @@ export default function HomePage({ onLogout }) {
       });
     });
 
-    const ordenar = (g) => Object.values(g).sort((a, b) => {
-        const hA = a.horarios.map(x => x.h).sort()[0] || "99:99";
-        const hB = b.horarios.map(x => x.h).sort()[0] || "99:99";
+    const ordenar = (g) => Object.values(g).map(grupo => {
+      return {
+        ...grupo,
+        horarios: grupo.horarios.sort((a, b) => a.h.localeCompare(b.h))
+      };
+    }).sort((a, b) => {
+        const hA = a.horarios[0]?.h || "99:99";
+        const hB = b.horarios[0]?.h || "99:99";
         return hA.localeCompare(hB);
     });
 
     return { gruposNormal: ordenar(gruposNormal), gruposRU: ordenar(gruposRU) };
-  }, [tabLinha, todosItinerarios]);
+  }, [tabLinha, todosItinerarios, apelidosRefreshKey]);
 
   const handleBusca = () => {
     if (!origemId || !destinoId) return;
@@ -318,7 +359,7 @@ export default function HomePage({ onLogout }) {
     );
   }
   if (view === 'mapa') return <MainPage itinerario={itinerarioSelecionado} horario={horarioSelecionado} origem={origemId} destino={destinoId} modoApenasConsulta={modo === 'verificar'} voltar={() => setView('config')} categoria={categoriaSelecionada} />;
-  if (view === 'personalizar') return <PersonalizationPage idsParadas={idsParadasUnicas} onVoltar={() => setView('config')} />;
+  if (view === 'personalizar') return <PersonalizationPage idsParadas={idsParadasUnicas} onVoltar={() => setView('config')} onApelidosSalvos={handleApelidosSalvos} />;
 
   return (
     <ThemeProvider theme={theme}>
@@ -370,34 +411,45 @@ export default function HomePage({ onLogout }) {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, justifyContent: 'center' }}>
                 {opcoesEncontradas.length === 0 ? (
                   <>
-                    <FormControl fullWidth variant="outlined">
-                      <InputLabel id="label-origem" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Subir em</InputLabel>
-                      <Select 
-                        labelId="label-origem"
-                        value={origemId} 
-                        onChange={e => setOrigemId(e.target.value)} 
-                        sx={{ borderRadius: '12px' }}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FormControl fullWidth variant="outlined">
+                        <InputLabel id="label-origem" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Subir em</InputLabel>
+                        <Select 
+                          labelId="label-origem"
+                          value={origemId} 
+                          onChange={e => setOrigemId(e.target.value)} 
+                          sx={{ borderRadius: '12px' }}
+                        >
+                          {idsParadasUnicas.map(id => {
+                            const isFav = favoritos.includes(id);
+                            return (
+                              <MenuItem 
+                                key={id} 
+                                value={id}
+                                sx={{ 
+                                  backgroundColor: isFav ? '#EBF4FF' : 'transparent',
+                                  fontWeight: isFav ? 'bold' : 'normal',
+                                  '&:hover': {
+                                    backgroundColor: isFav ? '#D1E6FF' : '#F5F5F5'
+                                  }
+                                }}
+                              >
+                                {safeTraduzir(id)} {isFav && '⭐'}
+                              </MenuItem>
+                            );
+                          })}
+                        </Select>
+                      </FormControl>
+                      <Button 
+                        size="small" 
+                        onClick={handleReativarGPS} 
+                        startIcon={<MyLocationIcon />}
+                        sx={{ minWidth: 'auto', px: 2, py: 1.5, borderRadius: '12px' }}
+                        title="Atualizar localização"
                       >
-                        {idsParadasUnicas.map(id => {
-                          const isFav = favoritos.includes(id);
-                          return (
-                            <MenuItem 
-                              key={id} 
-                              value={id}
-                              sx={{ 
-                                backgroundColor: isFav ? '#EBF4FF' : 'transparent',
-                                fontWeight: isFav ? 'bold' : 'normal',
-                                '&:hover': {
-                                  backgroundColor: isFav ? '#D1E6FF' : '#F5F5F5'
-                                }
-                              }}
-                            >
-                              {safeTraduzir(id)} {isFav && '⭐'}
-                            </MenuItem>
-                          );
-                        })}
-                      </Select>
-                    </FormControl>
+                        🔄
+                      </Button>
+                    </Box>
 
                     <FormControl fullWidth variant="outlined">
                       <InputLabel id="label-destino" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Descer em</InputLabel>

@@ -1,3 +1,4 @@
+// utils/geoUtils.js
 export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   // Normalização para Pelotas (Garante que sejam negativas)
   const nLat1 = lat1 > 0 ? lat1 * -1 : lat1;
@@ -18,8 +19,29 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // Retorna metros
 };
 
-const podeSubir = (posicaoUsuario, paradaCoords, ultimaAtualizacao) => {
-  // 1. Validar Distância (50 metros)
+// CORREÇÃO BUG 6: Função utilitária para normalizar coordenadas em formato consistente
+export const normalizarCoordenadas = (coord) => {
+  if (!coord) return null;
+
+  // Se já é um array [lat, lng]
+  if (Array.isArray(coord) && coord.length === 2) {
+    let [lat, lng] = coord;
+    return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
+  }
+
+  // Se é objeto com lat/lng ou latitude/longitude
+  if (typeof coord === "object") {
+    let lat = coord.lat ?? coord.latitude ?? coord._lat;
+    let lng = coord.lng ?? coord.longitude ?? coord._long;
+    if (lat !== undefined && lng !== undefined) {
+      return [lat > 0 ? lat * -1 : lat, lng > 0 ? lng * -1 : lng];
+    }
+  }
+
+  return null;
+};
+
+export const podeSubir = (posicaoUsuario, paradaCoords, ultimaAtualizacao) => {
   const distancia = calculateDistance(
     posicaoUsuario.lat,
     posicaoUsuario.lng,
@@ -30,7 +52,6 @@ const podeSubir = (posicaoUsuario, paradaCoords, ultimaAtualizacao) => {
   if (distancia > 50)
     return { ok: false, msg: "Você está muito longe da parada!" };
 
-  // 2. Validar Tempo (1 minuto)
   const agora = Date.now();
   const umMinuto = 60 * 1000;
   if (agora - ultimaAtualizacao < umMinuto) {

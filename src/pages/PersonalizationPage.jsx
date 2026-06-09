@@ -11,15 +11,13 @@ import { getAuth } from 'firebase/auth';
 import { db } from '../services/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
-
-export default function PersonalizationPage({ onVoltar, idsParadas }) {
-  const [abaInterna, setAbaInterna] = useState('menu'); // 'menu', 'renomear', 'favoritos'
+export default function PersonalizationPage({ onVoltar, idsParadas, onApelidosSalvos }) {
+  const [abaInterna, setAbaInterna] = useState('menu');
   const [favoritos, setFavoritos] = useState(getFavoritos() || []);
   const [apelidos, setApelidos] = useState(JSON.parse(localStorage.getItem("user_apelidos") || "{}"));
-const auth = getAuth();
-const usuarioLogado = auth.currentUser;
+  const auth = getAuth();
+  const usuarioLogado = auth.currentUser;
 
-  // Manipulação de favoritas em memória antes de salvar
   const handleToggleFavorito = (id) => {
     const novaLista = favoritos.includes(id) 
       ? favoritos.filter(f => f !== id) 
@@ -27,37 +25,38 @@ const usuarioLogado = auth.currentUser;
     setFavoritos(novaLista);
   };
 
-  // Armazena a alteração do apelido localmente no estado antes de submeter
   const handleMudarApelidoEstado = (sigla, novoNome) => {
     setApelidos(prev => ({ ...prev, [sigla]: novoNome }));
   };
 
-  // Persiste os apelidos editados de uma vez só
+  // CORREÇÃO BUG 3: Sem reload, usando callback opcional
   const handleSalvarTodosApelidos = () => {
     localStorage.setItem("user_apelidos", JSON.stringify(apelidos));
+    // Notifica o componente pai (HomePage) para recarregar os apelidos sem refresh
+    if (onApelidosSalvos && typeof onApelidosSalvos === 'function') {
+      onApelidosSalvos(apelidos);
+    }
     setAbaInterna('menu');
-    window.location.reload(); // Recarrega para aplicar na aplicação global
   };
 
-const handleSalvarTodasFavoritas = async () => {
-  salvarFavoritos(favoritos); // mantém salvamento local legado
-  if (usuarioLogado) {
-    try {
-      await setDoc(doc(db, "usuarios", usuarioLogado.uid, "favoritos", "dados"), {
-        lista: favoritos
-      });
-    } catch (e) {
-      console.error("Erro ao salvar favoritos no Firestore: ", e);
+  const handleSalvarTodasFavoritas = async () => {
+    salvarFavoritos(favoritos);
+    if (usuarioLogado) {
+      try {
+        await setDoc(doc(db, "usuarios", usuarioLogado.uid, "favoritos", "dados"), {
+          lista: favoritos
+        });
+      } catch (e) {
+        console.error("Erro ao salvar favoritos no Firestore: ", e);
+      }
     }
-  }
-  setAbaInterna('menu');
-};
+    setAbaInterna('menu');
+  };
 
   const handleContatarSuporte = () => {
     window.open('mailto:?subject=Suporte%20busepel', '_blank');
   };
 
-  // Regra de Ordenação: Favoritas no topo organizadas alfabeticamente, seguidas pelas normais organizadas alfabeticamente
   const listaOrdenada = useMemo(() => {
     return [...idsParadas].sort((a, b) => {
       const aFav = favoritos.includes(a);
@@ -66,7 +65,6 @@ const handleSalvarTodasFavoritas = async () => {
       if (aFav && !bFav) return -1;
       if (!aFav && bFav) return 1;
       
-      // Se ambos tiverem o mesmo status de favorito, ordena por ordem alfabética do nome traduzido
       return traduzirSigla(a).localeCompare(traduzirSigla(b));
     });
   }, [idsParadas, favoritos]);
@@ -82,7 +80,6 @@ const handleSalvarTodasFavoritas = async () => {
       boxSizing: 'border-box'
     }}>
       
-      {/* CABEÇALHO DA TELA DE PERSONALIZAÇÃO */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, flexShrink: 0 }}>
         {abaInterna !== 'menu' && (
           <Button startIcon={<ArrowBackIcon />} onClick={() => setAbaInterna('menu')} sx={{ fontWeight: 'bold' }}>
@@ -96,7 +93,6 @@ const handleSalvarTodasFavoritas = async () => {
         </Typography>
       </Box>
 
-      {/* MENU INICIAL FIXO */}
       {abaInterna === 'menu' && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, justifyContent: 'center', maxWidth: '500px', width: '100%', mx: 'auto' }}>
           <Button variant="outlined" fullWidth onClick={() => setAbaInterna('renomear')} sx={{ py: 2, fontWeight: 'bold', borderRadius: '12px' }}>
@@ -114,7 +110,6 @@ const handleSalvarTodasFavoritas = async () => {
         </Box>
       )}
 
-      {/* TELA FIXA: RENOMEAR PARADAS */}
       {abaInterna === 'renomear' && (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <List sx={{ flexGrow: 1, overflowY: 'auto', mb: 2, pr: 0.5 }}>
@@ -125,7 +120,7 @@ const handleSalvarTodasFavoritas = async () => {
                   <ListItemText 
                     primary={id.toUpperCase()} 
                     secondary={`Apelido: ${apelidoAtual}`} 
-                    secondarytypographyprops={{ style: { color: '#666', fontWeight: '500' } }}
+                    secondaryTypographyProps={{ style: { color: '#666', fontWeight: '500' } }}
                   />
                   <Select 
                     size="small"
@@ -145,7 +140,6 @@ const handleSalvarTodasFavoritas = async () => {
         </Box>
       )}
 
-      {/* TELA FIXA: PARADAS FAVORITAS */}
       {abaInterna === 'favoritos' && (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <List sx={{ flexGrow: 1, overflowY: 'auto', mb: 2, pr: 0.5 }}>
@@ -173,7 +167,7 @@ const handleSalvarTodasFavoritas = async () => {
                     primary={traduzirSigla(id)} 
                     primaryTypographyProps={{ style: { fontWeight: isFav ? 'bold' : 'normal' } }}
                     secondary={id.toUpperCase()}
-                    secondarytypographyprops={{ style: { color: isFav ? '#EEE' : '#888' } }}
+                    secondaryTypographyProps={{ style: { color: isFav ? '#EEE' : '#888' } }}
                   />
                 </ListItem>
               );

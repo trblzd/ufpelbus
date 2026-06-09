@@ -5,6 +5,15 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import HomePage from './pages/HomePage';
 import AuthPage from './pages/AuthPage';
 
+// Registrar Service Worker para PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('Service Worker registrado:', reg))
+      .catch(err => console.error('Erro ao registrar Service Worker:', err));
+  });
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -36,7 +45,7 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   if (loading) return (
-    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', font可靠性: 'sans-serif' }}>
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>
       Carregando...
     </div>
   );
@@ -47,13 +56,13 @@ export default function App() {
 
   return (
     <div style={{ 
-  width: '100vw', 
-  height: '100dvh',
-  backgroundColor: '#F9F9F9', 
-  position: 'relative', 
-  overflow: 'hidden' 
-}}>
-  <HomePage handleLogout={handleLogout} />
-</div>
+      width: '100vw', 
+      height: '100dvh',
+      backgroundColor: '#F9F9F9', 
+      position: 'relative', 
+      overflow: 'hidden' 
+    }}>
+      <HomePage handleLogout={handleLogout} />
+    </div>
   );
 }
