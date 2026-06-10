@@ -70,6 +70,7 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
   const auth = getAuth();
   const isPageVisible = usePageVisibility();
   const [reconectando, setReconectando] = useState(false);
+  const ultimaReconexaoRef = useRef(0);
   
   const [embarqueAutomaticoAtivo, setEmbarqueAutomaticoAtivo] = useState(true);
 
@@ -203,7 +204,7 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     onEmbarqueConfirmado: async () => {
       console.log('[EmbarqueAuto] Confirmando embarque automático...');
       setAlertaMsg({
-        texto: `🚌 Embarque automático detectado! Você está no ônibus para ${traduzirSigla(destino)}.`,
+        texto: `Embarque automático detectado! Você está no ônibus para ${traduzirSigla(destino)}.`,
         severidade: 'success'
       });
       setTimeout(() => setAlertaMsg(null), 5000);
@@ -237,13 +238,15 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
     }
   }, [statusFluxo, tripId, setViagemIdPersistida]);
 
-  // Verificar viagem existente ao recarregar
+  // Verificar viagem existente ao recarregar (APENAS NA CARGA INICIAL)
   useEffect(() => {
+    let isMounted = true;
     const verificarViagemExistente = async () => {
       if (viagemIdPersistida && statusFluxo !== 'inicial' && statusFluxo !== 'expulso') {
+        console.log("[MainPage] Verificando viagem existente:", viagemIdPersistida);
         const viagemRef = doc(db, "viagens_ativas", viagemIdPersistida);
         const snap = await getDoc(viagemRef);
-        if (!snap.exists()) {
+        if (!snap.exists() && isMounted) {
           console.log("[MainPage] Viagem não existe mais, limpando estado");
           clearStatusFluxo();
           clearIsRastreador();
@@ -252,24 +255,45 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
           voltar();
           return;
         }
-        const dados = snap.data();
-        setViagemAtiva(dados);
-        const usuario = auth.currentUser;
-        if (usuario && dados.rastreadorAtual?.uid !== usuario.uid) setIsRastreador(false);
+        if (snap.exists() && isMounted) {
+          const dados = snap.data();
+          setViagemAtiva(dados);
+          const usuario = auth.currentUser;
+          if (usuario && dados.rastreadorAtual?.uid !== usuario.uid) setIsRastreador(false);
+        }
       }
     };
     verificarViagemExistente();
-  }, [viagemIdPersistida, statusFluxo, voltar, setIsRastreador, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro, auth]);
+    return () => { isMounted = false; };
+  }, []); // Executa apenas uma vez na montagem
 
-  // Reconectar quando página voltar
+  // Reconectar quando página voltar (com throttle para evitar loop)
   useEffect(() => {
-    if (isPageVisible && statusFluxo !== 'inicial' && statusFluxo !== 'expulso' && !reconectando) {
+    const agora = Date.now();
+    const deveReconectar = isPageVisible && 
+                           statusFluxo !== 'inicial' && 
+                           statusFluxo !== 'expulso' && 
+                           !reconectando &&
+                           (agora - ultimaReconexaoRef.current) > 5000;
+    
+    if (deveReconectar) {
+      console.log("[MainPage] Reconectando à viagem...");
+      ultimaReconexaoRef.current = agora;
       setReconectando(true);
+      
       const viagemRef = doc(db, "viagens_ativas", tripId);
       getDoc(viagemRef).then(snap => {
-        if (snap.exists()) setViagemAtiva(snap.data());
+        if (snap.exists()) {
+          setViagemAtiva(snap.data());
+          console.log("[MainPage] Reconectado com sucesso");
+        } else {
+          console.log("[MainPage] Viagem não encontrada na reconexão");
+        }
         setReconectando(false);
-      }).catch(() => setReconectando(false));
+      }).catch((err) => {
+        console.error("[MainPage] Erro na reconexão:", err);
+        setReconectando(false);
+      });
     }
   }, [isPageVisible, statusFluxo, tripId, reconectando]);
 
@@ -329,7 +353,7 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
 
   const handleExpulsar = useCallback((motivo) => {
     const mensagens = {
-      destino: 'Você chegou ao destino! Boa aula! 🎓',
+      destino: 'Você chegou ao destino! Boa aula!',
       desvio: 'Você saiu da rota. Viagem encerrada.',
       rebaixado: 'Outro passageiro assumiu o rastreamento.',
       cancelada: 'Viagem encerrada pelo sistema.',
@@ -363,7 +387,7 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
       if (!isRastreador && statusFluxo === 'rastreando' && !gpsPassageiroAtivo) {
         setGpsPassageiroAtivo(true);
         setAlertaMsg({ 
-          texto: `🔔 Atenção! Você está chegando perto do seu destino (${traduzirSigla(destino)}). Prepare-se para descer.`, 
+          texto: `Atenção! Você está chegando perto do seu destino (${traduzirSigla(destino)}). Prepare-se para descer.`, 
           severidade: 'info' 
         });
         setTimeout(() => setAlertaMsg(null), 5000);
@@ -479,11 +503,11 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
 
         <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap', justifyContent: 'center' }}>
           {statusFluxo !== 'inicial' && estimativaTempoReal && !modoApenasConsulta && (
-            <Chip icon={<AccessTimeIcon sx={{ fontSize: 14 }} />} label={`⏱️ Chegada em ${estimativaTempoReal.minutos} min`} color="secondary" size="small" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
+            <Chip icon={<AccessTimeIcon sx={{ fontSize: 14 }} />} label={`Chegada em ${estimativaTempoReal.minutos} min`} color="secondary" size="small" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
           )}
           {infoLotacao && <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />}
-          {statusFluxo === 'rastreando' && isRastreador && <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="📡 Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#00418F', color: 'white', fontSize: '0.65rem' }} />}
-          {!isPageVisible && statusFluxo === 'rastreando' && <Chip label="📱 App em segundo plano" size="small" sx={{ fontWeight: 'bold', bgcolor: '#FF8A31', color: 'white', fontSize: '0.65rem' }} />}
+          {statusFluxo === 'rastreando' && isRastreador && <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#00418F', color: 'white', fontSize: '0.65rem' }} />}
+          {!isPageVisible && statusFluxo === 'rastreando' && <Chip label="App em segundo plano" size="small" sx={{ fontWeight: 'bold', bgcolor: '#FF8A31', color: 'white', fontSize: '0.65rem' }} />}
         </Stack>
 
         {statusFluxo !== 'inicial' && estimativaTempoReal?.detalhes && !modoApenasConsulta && estimativaTempoReal.detalhes.length > 0 && (
@@ -535,36 +559,60 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
           <Box sx={{ pointerEvents: 'auto' }}>
             
             {!modoApenasConsulta && statusFluxo === 'inicial' && (
-  <Box sx={{ width: '100%' }}>
-    {/* Botão principal de embarque (unificado) */}
-    <Button
-      variant="contained"
-      disabled={(distanciaAteParada || distanciaAuto || 999) > 80}
-      onClick={async () => {
-        if (embarqueAutomaticoAtivo) {
-          setEmbarqueAutomaticoAtivo(false);
-        }
-        await handleConfirmarEmbarque();
-      }}
-      sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '60px', fontWeight: 'bold', boxShadow: 3 }}
-    >
-      {(distanciaAteParada || distanciaAuto || 999) > 80
-        ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)`
-        : (embarqueAutomaticoAtivo ? 'Aguardando ônibus...' : 'Confirmar Embarque Manual')}
-    </Button>
-    
-    {/* Botão para alternar entre modo automático e manual */}
-    {statusEmbarqueAuto !== 'confirmado' && (
-      <Button
-        size="small"
-        onClick={() => setEmbarqueAutomaticoAtivo(!embarqueAutomaticoAtivo)}
-        sx={{ mt: 1, textTransform: 'none', color: '#00418F', width: '100%' }}
-      >
-        {embarqueAutomaticoAtivo ? 'Usar embarque manual' : 'Reativar embarque automático'}
-      </Button>
-    )}
-  </Box>
-)}
+              <Box sx={{ width: '100%' }}>
+                {/* Barra de progresso do embarque automático (só aparece durante contagem) */}
+                {embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' && velocidadeAuto > 5 && tempoRestante && (
+                  <Paper elevation={3} sx={{ mb: 1.5, p: 1.5, borderRadius: '16px', bgcolor: '#f0f7ff' }}>
+                    <Stack spacing={1}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <CircularProgress size={16} sx={{ color: '#0EA503' }} />
+                          <Typography variant="caption" color="secondary" fontWeight="bold">
+                            Embarque em {Math.ceil(tempoRestante / 1000)}s...
+                          </Typography>
+                        </Box>
+                        <Typography variant="caption" fontWeight="bold" sx={{ color: '#00418F' }}>
+                          {velocidadeAuto.toFixed(1)} km/h
+                        </Typography>
+                      </Stack>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={Math.min(progressoEmbarque, 100)} 
+                        sx={{ height: 6, borderRadius: 3, bgcolor: '#e0e0e0', '& .MuiLinearProgress-bar': { bgcolor: '#0EA503' } }}
+                      />
+                    </Stack>
+                  </Paper>
+                )}
+                
+                {/* Botão principal de embarque (unificado) */}
+                <Button
+                  variant="contained"
+                  disabled={(distanciaAteParada || distanciaAuto || 999) > 80}
+                  onClick={async () => {
+                    if (embarqueAutomaticoAtivo) {
+                      setEmbarqueAutomaticoAtivo(false);
+                    }
+                    await handleConfirmarEmbarque();
+                  }}
+                  sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '60px', fontWeight: 'bold', boxShadow: 3 }}
+                >
+                  {(distanciaAteParada || distanciaAuto || 999) > 80
+                    ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)`
+                    : (embarqueAutomaticoAtivo ? 'Aguardando ônibus...' : 'Confirmar Embarque Manual')}
+                </Button>
+                
+                {/* Botão para alternar entre modo automático e manual */}
+                {statusEmbarqueAuto !== 'confirmado' && (
+                  <Button
+                    size="small"
+                    onClick={() => setEmbarqueAutomaticoAtivo(!embarqueAutomaticoAtivo)}
+                    sx={{ mt: 1, textTransform: 'none', color: '#00418F', width: '100%' }}
+                  >
+                    {embarqueAutomaticoAtivo ? 'Usar embarque manual' : 'Reativar embarque automático'}
+                  </Button>
+                )}
+              </Box>
+            )}
 
             {statusFluxo === 'votando' && (
               <Paper elevation={4} sx={{ p: 2, borderRadius: '15px', textAlign: 'center' }}>
@@ -581,10 +629,10 @@ export default function MainPage({ itinerario, horario, origem, destino, modoApe
               <Paper elevation={2} sx={{ p: 1.5, borderRadius: '15px', textAlign: 'center', bgcolor: 'rgba(255,255,255,0.92)' }}>
                 <Typography variant="caption" color="textSecondary">
                   {isRastreador
-                    ? '📡 Você está contribuindo com a rota em tempo real'
+                    ? 'Você está contribuindo com a rota em tempo real'
                     : gpsPassageiroAtivo
-                      ? '📍 GPS ativado para desembarque'
-                      : '🚌 Acompanhando o ônibus...'}
+                      ? 'GPS ativado para desembarque'
+                      : 'Acompanhando o ônibus...'}
                 </Typography>
               </Paper>
             )}

@@ -194,10 +194,7 @@ export const useRastreamento = ({
         return;
       }
 
-      // ============================================================
-      // NOVO: Para passageiros (não rastreadores), reativa GPS quando
-      // o ônibus está na parada anterior ao destino
-      // ============================================================
+      // Para passageiros (não rastreadores), reativa GPS quando o ônibus está na parada anterior ao destino
       if (
         !isRastreador &&
         onReativarGpsPassageiro &&
@@ -286,9 +283,7 @@ export const useRastreamento = ({
         }
       }
 
-      // ============================================================
       // VERIFICAÇÃO DE CHEGADA AO DESTINO (50m) - Expulsa o usuário
-      // ============================================================
       const coordsDestino = obterCoordsParada(paradaDestino);
       if (coordsDestino) {
         const distAteDestino = calculateDistance(
@@ -370,8 +365,13 @@ export const useRastreamento = ({
       return;
     }
 
+    // Evita criar múltiplos watchers
+    if (watchIdRef.current !== null) return;
+
     if (!navigator.geolocation) return;
 
+    console.log("[useRastreamento] Iniciando watcher de GPS");
+    
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const uid = auth.currentUser?.uid || null;
@@ -389,6 +389,7 @@ export const useRastreamento = ({
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
       }
     };
   }, [ativo, tick]);
