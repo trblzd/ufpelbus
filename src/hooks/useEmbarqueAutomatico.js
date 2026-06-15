@@ -3,8 +3,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { calculateDistance } from "../utils/geoUtils";
 
 const DISTANCIA_EMBARQUE_METROS = 80;
-const VELOCIDADE_EMBARQUE_KMH = 5;
-const TEMPO_CONFIRMACAO_MS = 5000;
+const VELOCIDADE_MAX_EMBARQUE_KMH = 3; // CORRIGIDO: embarque quando PARADO
+const TEMPO_CONFIRMACAO_MS = 3000;
 
 export const useEmbarqueAutomatico = ({
   ativo,
@@ -32,34 +32,26 @@ export const useEmbarqueAutomatico = ({
     return distKm / tempoHoras;
   }, []);
 
-  // Atualiza tempo restante em tempo real
   useEffect(() => {
-    if (
-      status === "proximo" &&
-      inicioEmbarqueRef.current &&
-      velocidade > VELOCIDADE_EMBARQUE_KMH
-    ) {
+    if (status === "proximo" && inicioEmbarqueRef.current) {
       if (intervalRef.current) clearInterval(intervalRef.current);
-
       intervalRef.current = setInterval(() => {
         if (inicioEmbarqueRef.current) {
           const elapsed = Date.now() - inicioEmbarqueRef.current;
           const remaining = Math.max(0, TEMPO_CONFIRMACAO_MS - elapsed);
           setTempoRestante(remaining);
-
           if (remaining <= 0 && !jaDisparouRef.current) {
             clearInterval(intervalRef.current);
           }
         }
       }, 100);
-
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
       };
     } else {
       setTempoRestante(null);
     }
-  }, [status, velocidade]);
+  }, [status]);
 
   useEffect(() => {
     if (
@@ -91,42 +83,32 @@ export const useEmbarqueAutomatico = ({
     ultimaPosicaoRef.current = { lat, lng };
     ultimoTempoRef.current = Date.now();
 
+    // CORREÇÃO: Confirma embarque quando está próximo E PARADO (velocidade baixa)
     if (dist <= DISTANCIA_EMBARQUE_METROS) {
       if (status === "aguardando") {
         setStatus("proximo");
-        console.log(`[EmbarqueAuto] Próximo à parada (${Math.round(dist)}m)`);
       }
 
-      if (vel > VELOCIDADE_EMBARQUE_KMH) {
+      // Mudança: velocidade MENOR que o limite para confirmar embarque
+      if (vel <= VELOCIDADE_MAX_EMBARQUE_KMH) {
         if (!inicioEmbarqueRef.current) {
           inicioEmbarqueRef.current = Date.now();
-          console.log(
-            `[EmbarqueAuto] Velocidade detectada: ${vel.toFixed(1)}km/h - aguardando confirmação...`,
-          );
         } else {
-          const tempoEmVelocidade = Date.now() - inicioEmbarqueRef.current;
-          if (
-            tempoEmVelocidade >= TEMPO_CONFIRMACAO_MS &&
-            !jaDisparouRef.current
-          ) {
+          const tempoParado = Date.now() - inicioEmbarqueRef.current;
+          if (tempoParado >= TEMPO_CONFIRMACAO_MS && !jaDisparouRef.current) {
             jaDisparouRef.current = true;
             setStatus("confirmado");
-            console.log(
-              `[EmbarqueAuto] Embarque confirmado após ${tempoEmVelocidade}ms`,
-            );
             onEmbarqueConfirmado();
           }
         }
       } else {
+        // Reset se começou a se mover
         if (inicioEmbarqueRef.current) {
           inicioEmbarqueRef.current = null;
-          console.log("[EmbarqueAuto] Velocidade caiu, resetando contagem");
         }
       }
     } else {
-      if (status !== "aguardando") {
-        setStatus("aguardando");
-      }
+      if (status !== "aguardando") setStatus("aguardando");
       inicioEmbarqueRef.current = null;
     }
   }, [
