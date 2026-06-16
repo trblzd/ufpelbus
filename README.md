@@ -46,5 +46,3 @@
 - 🔄 **Reserva automática** - Próximo passageiro assume quando o atual desce
 - 🧠 **Aprendizado coletivo** - Tempos de trecho melhoram com uso
 - 💾 **Cache multi-camada** - Redução de 70% nas requisições ao Firebase
-
-## 🏗️ Arquitetura do Sistema
