@@ -1,4 +1,7 @@
 // hooks/useRastreamento.js
+// HOOK DE RASTREAMENTO DE VIAGEM
+// Gerencia o envio de posição GPS durante a viagem ativa
+
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { db, auth } from "../services/firebase";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -8,33 +11,45 @@ import { useAprendizadoRotas } from "./useAprendizadoRotas";
 
 // ========== CONFIGURAÇÕES ==========
 const CONFIG = {
-  VEL_MIN_KMH: 2,
-  VEL_MAX_KMH: 70,
-  DESVIO_MAX_METROS: 500,
-  TEMPO_DESVIO_EXPULSAR_MS: 600000, // 10 minutos
-  DIST_CHEGADA_METROS: 80,
-  THROTTLE_SAVE_MS: 15000,
-  MIN_MOVIMENTO_METROS: 20,
-  RAIO_DINAMICO_PERCENT: 0.15,
-  RAIO_MINIMO_METROS: 100,
-  RAIO_MAXIMO_METROS: 500,
-  DESVIO_CHECK_INTERVAL: 3,
-  GPS_OPTIONS: { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+  VEL_MIN_KMH: 2, // Velocidade mínima para salvar (evita ruído)
+  VEL_MAX_KMH: 70, // Velocidade máxima plausível (filtro)
+  DESVIO_MAX_METROS: 500, // Distância máxima para considerar "na rota"
+  TEMPO_DESVIO_EXPULSAR_MS: 600000, // 10 minutos fora da rota = expulsão
+  DIST_CHEGADA_METROS: 80, // Distância para considerar "chegou ao destino"
+  THROTTLE_SAVE_MS: 15000, // Salva posição a cada 15 segundos (economia)
+  MIN_MOVIMENTO_METROS: 20, // Movimento mínimo para salvar (evita posição parada)
+  RAIO_DINAMICO_PERCENT: 0.15, // 15% da distância entre paradas
+  RAIO_MINIMO_METROS: 100, // Raio mínimo de detecção (100m)
+  RAIO_MAXIMO_METROS: 500, // Raio máximo de detecção (500m)
+  GPS_OPTIONS: {
+    enableHighAccuracy: true, // Alta precisão para rastreamento
+    timeout: 15000, // Timeout de 15 segundos
+    maximumAge: 5000, // Pode usar posição com até 5 segundos
+  },
 };
 
 // ========== UTILITÁRIOS PUROS ==========
+
+/**
+ * Calcula velocidade em km/h entre duas posições GPS
+ */
 const calcularVelocidadeKmh = (lat1, lng1, lat2, lng2, deltaMs) => {
   if (deltaMs <= 0) return 0;
   const distMetros = calculateDistance(lat1, lng1, lat2, lng2);
   return distMetros / 1000 / (deltaMs / 3600000);
 };
 
+/**
+ * Calcula distância de um ponto a um segmento de reta (entre duas paradas)
+ * Usado para detectar se o ônibus está no trecho correto
+ */
 const distanciaAteSegmento = (p, a, b) => {
   const dy = b.lat - a.lat;
   const dx = b.lng - a.lng;
   if (dx === 0 && dy === 0)
     return calculateDistance(p.lat, p.lng, a.lat, a.lng);
 
+  // Projeção do ponto no segmento
   const t = Math.max(
     0,
     Math.min(
@@ -47,6 +62,28 @@ const distanciaAteSegmento = (p, a, b) => {
 };
 
 // ========== HOOK PRINCIPAL ==========
+
+/**
+ * Hook de rastreamento
+ *
+ * Responsabilidades:
+ * 1. Enviar posição GPS em tempo real (apenas rastreador)
+ * 2. Detectar paradas automaticamente
+ * 3. Gerenciar desvios de rota
+ * 4. Promover próximo rastreador quando o atual desce
+ * 5. Ativar GPS de passageiros próximos ao destino
+ *
+ * @param {Object} params
+ * @param {boolean} params.ativo - Se o rastreamento está ativo
+ * @param {boolean} params.isRastreador - Se o usuário é o rastreador atual
+ * @param {Object} params.itinerario - Dados do itinerário
+ * @param {string} params.horario - Horário da viagem
+ * @param {string} params.paradaOrigem - Parada de embarque
+ * @param {string} params.paradaDestino - Parada de desembarque
+ * @param {Object} params.paradasData - Dados de todas as paradas
+ * @param {Function} params.onExpulsar - Callback quando usuário é expulso
+ * @param {Function} params.onReativarGpsPassageiro - Callback para ativar GPS de passageiro
+ */
 export const useRastreamento = ({
   ativo,
   isRastreador,
@@ -58,6 +95,7 @@ export const useRastreamento = ({
   onExpulsar,
   onReativarGpsPassageiro,
 }) => {
+  // ID único da viagem
   const viagemId = useMemo(
     () =>
       `${itinerario?.id?.toLowerCase()?.trim()}_${horario?.replace(":", "")}`,
@@ -65,22 +103,27 @@ export const useRastreamento = ({
   );
 
   // ========== REFS ==========
-  const watchIdRef = useRef(null);
+  const watchIdRef = useRef(null); // ID do watcher GPS
   const stateRef = useRef({
-    ultimaPos: null,
-    ultimoTempo: null,
-    inicioDesvio: null,
-    ultimoTrecho: null,
-    ultimoSave: 0,
-    contadorDesvio: 0,
-    jaReativouGpsPassageiro: false,
+    ultimaPos: null, // Última posição salva
+    ultimoTempo: null, // Timestamp da última posição
+    inicioDesvio: null, // Quando começou o desvio
+    ultimoTrecho: null, // Último trecho detectado
+    ultimoSave: 0, // Último salvamento (throttle)
+    contadorDesvio: 0, // Contador para desvio
+    jaReativouGpsPassageiro: false, // Já ativou GPS de passageiro
   });
 
+  // Hook de aprendizado de rotas (mede tempos entre paradas)
   const { iniciarTrecho, finalizarTrecho } = useAprendizadoRotas({
     itinerarioId: itinerario?.id,
   });
 
   // ========== FUNÇÕES DE PARADA ==========
+
+  /**
+   * Obtém coordenadas de uma parada (normalizadas)
+   */
   const obterCoordsParada = useCallback(
     (nomeParada) => {
       if (!nomeParada || !paradasData) return null;
@@ -94,6 +137,10 @@ export const useRastreamento = ({
     [paradasData],
   );
 
+  /**
+   * Calcula raio dinâmico baseado na distância entre paradas
+   * Paradas mais distantes têm raio maior
+   */
   const calcularRaioDinamico = useCallback(
     (paradaA, paradaB) => {
       const coordsA = obterCoordsParada(paradaA);
@@ -116,6 +163,11 @@ export const useRastreamento = ({
   );
 
   // ========== DETECÇÃO DE TRECHO ==========
+
+  /**
+   * Detecta em qual trecho do itinerário o ônibus está atualmente
+   * Baseado na posição GPS e na distância aos segmentos do trajeto
+   */
   const detectarTrechoAtual = useCallback(
     (lat, lng, indiceAtualViagem) => {
       if (!itinerario?.paradas?.length) return null;
@@ -140,10 +192,6 @@ export const useRastreamento = ({
       for (let i = indiceAtualViagem ?? idxOrigem; i <= limiteBusca; i++) {
         if (!paradas[i] || !paradas[i + 1]) continue;
 
-        const pA = paradasData[paradas[i]];
-        const pB = paradasData[paradas[i + 1]];
-        if (!pA?.location || !pB?.location) continue;
-
         const a = obterCoordsParada(paradas[i]);
         const b = obterCoordsParada(paradas[i + 1]);
         if (!a || !b) continue;
@@ -163,17 +211,24 @@ export const useRastreamento = ({
       itinerario,
       paradaOrigem,
       paradaDestino,
-      paradasData,
       obterCoordsParada,
       calcularRaioDinamico,
     ],
   );
 
   // ========== GERENCIAMENTO DE VIAGEM ==========
+
+  /**
+   * Finaliza a viagem para o usuário atual
+   * - Promove próximo rastreador (se houver)
+   * - Limpa referência da viagem no usuário
+   * - Chama callback onExpulsar
+   */
   const finalizarViagem = useCallback(
     async (viagemRef, uid, motivo) => {
       finalizarTrecho();
 
+      // Se for rastreador e não for destino, promove próximo
       if (isRastreador && motivo !== "destino") {
         const snap = await getDoc(viagemRef);
         const dados = snap.data();
@@ -191,6 +246,7 @@ export const useRastreamento = ({
         }
       }
 
+      // Limpa referência da viagem no usuário
       await updateDoc(doc(db, "usuarios", uid), { viagemAtualId: null });
       onExpulsar(motivo);
     },
@@ -198,6 +254,11 @@ export const useRastreamento = ({
   );
 
   // ========== LÓGICA PRINCIPAL DO TICK ==========
+
+  /**
+   * Função principal chamada a cada atualização de GPS
+   * Gerencia todo o ciclo de rastreamento
+   */
   const tick = useCallback(
     async (pos, uid) => {
       if (!uid || !viagemId) return;
@@ -206,6 +267,7 @@ export const useRastreamento = ({
       const viagemRef = doc(db, "viagens_ativas", viagemId);
       const viagemSnap = await getDoc(viagemRef);
 
+      // Verifica se viagem ainda existe
       if (!viagemSnap.exists()) {
         await finalizarViagem(viagemRef, uid, "cancelada");
         return;
@@ -213,13 +275,13 @@ export const useRastreamento = ({
 
       const viagemDados = viagemSnap.data();
 
-      // Validação de rastreador
+      // Verifica se ainda é o rastreador (pode ter sido substituído)
       if (isRastreador && viagemDados.rastreadorAtual?.uid !== uid) {
         await finalizarViagem(viagemRef, uid, "rebaixado");
         return;
       }
 
-      // Ativação de GPS para passageiro (próximo ao destino)
+      // Ativa GPS de passageiros próximos ao destino
       if (
         !isRastreador &&
         onReativarGpsPassageiro &&
@@ -233,6 +295,7 @@ export const useRastreamento = ({
         );
         const indiceAtual = viagemDados.indiceParada ?? 0;
 
+        // Se está a 1 parada do destino, ativa GPS
         if (
           idxDestino > 0 &&
           indiceAtual >= idxDestino - 1 &&
@@ -243,7 +306,7 @@ export const useRastreamento = ({
         }
       }
 
-      // Atualização automática de parada (apenas rastreador)
+      // Atualiza parada automática (apenas rastreador)
       if (isRastreador) {
         await verificarEAtualizarParadaAutomatica(
           viagemId,
@@ -255,7 +318,7 @@ export const useRastreamento = ({
         );
       }
 
-      // Detecção e registro de trecho
+      // Detecta trecho atual para aprendizado
       const chaveTrecho = detectarTrechoAtual(
         pos.lat,
         pos.lng,
@@ -265,12 +328,12 @@ export const useRastreamento = ({
         if (stateRef.current.ultimoTrecho !== chaveTrecho)
           iniciarTrecho(chaveTrecho);
         stateRef.current.ultimoTrecho = chaveTrecho;
-        stateRef.current.inicioDesvio = null; // Reset desvio se está na rota
+        stateRef.current.inicioDesvio = null;
       } else if (isRastreador && !stateRef.current.inicioDesvio) {
         stateRef.current.inicioDesvio = agora;
       }
 
-      // Verificação de desvio prolongado
+      // Verifica desvio prolongado (10 minutos fora da rota)
       if (
         isRastreador &&
         stateRef.current.inicioDesvio &&
@@ -280,7 +343,7 @@ export const useRastreamento = ({
         return;
       }
 
-      // Verificação de chegada ao destino
+      // Verifica chegada ao destino
       const coordsDestino = obterCoordsParada(paradaDestino);
       if (
         coordsDestino &&
@@ -295,7 +358,7 @@ export const useRastreamento = ({
         return;
       }
 
-      // Salvamento de telemetria (com throttle)
+      // Salva telemetria (com throttle para economizar requisições)
       if (
         isRastreador &&
         agora - stateRef.current.ultimoSave >= CONFIG.THROTTLE_SAVE_MS
@@ -323,6 +386,7 @@ export const useRastreamento = ({
         stateRef.current.ultimaPos = pos;
         stateRef.current.ultimoTempo = agora;
 
+        // Só salva se velocidade for plausível e se moveu minimamente
         if (
           velKmh >= CONFIG.VEL_MIN_KMH &&
           velKmh <= CONFIG.VEL_MAX_KMH &&
@@ -353,13 +417,17 @@ export const useRastreamento = ({
   );
 
   // ========== SETUP DO GPS ==========
+
+  /**
+   * Inicia/para o watcher de GPS baseado no estado `ativo`
+   */
   useEffect(() => {
     if (!ativo) {
+      // Para o watcher e limpa estado
       if (watchIdRef.current)
         navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
       finalizarTrecho();
-      // Reset completo do estado
       stateRef.current = {
         ultimaPos: null,
         ultimoTempo: null,
@@ -391,5 +459,5 @@ export const useRastreamento = ({
     };
   }, [ativo, tick, finalizarTrecho]);
 
-  return null;
+  return null; // Hook sem UI, apenas lógica
 };
