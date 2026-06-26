@@ -1,89 +1,46 @@
 // hooks/useRastreamento.js
-// HOOK DE RASTREAMENTO DE VIAGEM
-// Gerencia o envio de posição GPS durante a viagem ativa
+// HOOK DE RASTREAMENTO - Gerencia envio de posição GPS e promoção de rastreador
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { db, auth } from "../services/firebase";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { calculateDistance } from "../utils/geoUtils";
-import { verificarEAtualizarParadaAutomatica } from "../services/transporteService";
-import { useAprendizadoRotas } from "./useAprendizadoRotas";
+import {
+  salvarTempoTrecho,
+  verificarEAtualizarParadaAutomatica,
+} from "../services/transporteService";
 
 // ========== CONFIGURAÇÕES ==========
-const CONFIG = {
-  VEL_MIN_KMH: 2, // Velocidade mínima para salvar (evita ruído)
-  VEL_MAX_KMH: 70, // Velocidade máxima plausível (filtro)
-  DESVIO_MAX_METROS: 500, // Distância máxima para considerar "na rota"
-  TEMPO_DESVIO_EXPULSAR_MS: 600000, // 10 minutos fora da rota = expulsão
-  DIST_CHEGADA_METROS: 80, // Distância para considerar "chegou ao destino"
-  THROTTLE_SAVE_MS: 15000, // Salva posição a cada 15 segundos (economia)
-  MIN_MOVIMENTO_METROS: 20, // Movimento mínimo para salvar (evita posição parada)
-  RAIO_DINAMICO_PERCENT: 0.15, // 15% da distância entre paradas
-  RAIO_MINIMO_METROS: 100, // Raio mínimo de detecção (100m)
-  RAIO_MAXIMO_METROS: 500, // Raio máximo de detecção (500m)
-  GPS_OPTIONS: {
-    enableHighAccuracy: true, // Alta precisão para rastreamento
-    timeout: 15000, // Timeout de 15 segundos
-    maximumAge: 5000, // Pode usar posição com até 5 segundos
-  },
-};
+const VEL_MIN_KMH = 0; // 0 = sempre salva, mesmo parado
+const VEL_MAX_KMH = 70;
+const DESVIO_MAX_METROS = 150;
+const TEMPO_DESVIO_EXPULSAR = 120000; // 2 minutos
+const DIST_CHEGADA_METROS = 50;
+const THROTTLE_SAVE_MS = 3000; // 3 segundos
+const DESVIO_CHECK_INTERVAL = 5;
 
-// ========== UTILITÁRIOS PUROS ==========
-
-/**
- * Calcula velocidade em km/h entre duas posições GPS
- */
 const calcularVelocidadeKmh = (lat1, lng1, lat2, lng2, deltaMs) => {
   if (deltaMs <= 0) return 0;
   const distMetros = calculateDistance(lat1, lng1, lat2, lng2);
-  return distMetros / 1000 / (deltaMs / 3600000);
+  const distKm = distMetros / 1000;
+  const tempoHoras = deltaMs / 3600000;
+  return distKm / tempoHoras;
 };
 
-/**
- * Calcula distância de um ponto a um segmento de reta (entre duas paradas)
- * Usado para detectar se o ônibus está no trecho correto
- */
-const distanciaAteSegmento = (p, a, b) => {
-  const dy = b.lat - a.lat;
-  const dx = b.lng - a.lng;
-  if (dx === 0 && dy === 0)
-    return calculateDistance(p.lat, p.lng, a.lat, a.lng);
+const distanciaAteSegmento = (pLat, pLng, aLat, aLng, bLat, bLng) => {
+  const dy = bLat - aLat;
+  const dx = bLng - aLng;
+  if (dx === 0 && dy === 0) return calculateDistance(pLat, pLng, aLat, aLng);
 
-  // Projeção do ponto no segmento
-  const t = Math.max(
-    0,
-    Math.min(
-      1,
-      ((p.lat - a.lat) * dy + (p.lng - a.lng) * dx) / (dy * dy + dx * dx),
-    ),
-  );
-  const proj = { lat: a.lat + t * dy, lng: a.lng + t * dx };
-  return calculateDistance(p.lat, p.lng, proj.lat, proj.lng);
+  let t = ((pLat - aLat) * dy + (pLng - aLng) * dx) / (dy * dy + dx * dx);
+  t = Math.max(0, Math.min(1, t));
+
+  const projLat = aLat + t * dy;
+  const projLng = aLng + t * dx;
+
+  return calculateDistance(pLat, pLng, projLat, projLng);
 };
 
-// ========== HOOK PRINCIPAL ==========
-
-/**
- * Hook de rastreamento
- *
- * Responsabilidades:
- * 1. Enviar posição GPS em tempo real (apenas rastreador)
- * 2. Detectar paradas automaticamente
- * 3. Gerenciar desvios de rota
- * 4. Promover próximo rastreador quando o atual desce
- * 5. Ativar GPS de passageiros próximos ao destino
- *
- * @param {Object} params
- * @param {boolean} params.ativo - Se o rastreamento está ativo
- * @param {boolean} params.isRastreador - Se o usuário é o rastreador atual
- * @param {Object} params.itinerario - Dados do itinerário
- * @param {string} params.horario - Horário da viagem
- * @param {string} params.paradaOrigem - Parada de embarque
- * @param {string} params.paradaDestino - Parada de desembarque
- * @param {Object} params.paradasData - Dados de todas as paradas
- * @param {Function} params.onExpulsar - Callback quando usuário é expulso
- * @param {Function} params.onReativarGpsPassageiro - Callback para ativar GPS de passageiro
- */
 export const useRastreamento = ({
   ativo,
   isRastreador,
@@ -92,173 +49,139 @@ export const useRastreamento = ({
   paradaOrigem,
   paradaDestino,
   paradasData,
+  rotasAprendidas,
   onExpulsar,
   onReativarGpsPassageiro,
 }) => {
-  // ID único da viagem
-  const viagemId = useMemo(
-    () =>
-      `${itinerario?.id?.toLowerCase()?.trim()}_${horario?.replace(":", "")}`,
-    [itinerario?.id, horario],
-  );
+  const watchIdRef = useRef(null);
+  const ultimaPosRef = useRef(null);
+  const ultimoTempoRef = useRef(null);
+  const iniciouDesvioRef = useRef(null);
+  const ultimoTrechoRef = useRef(null);
+  const tempoInicioTrechoRef = useRef(null);
+  const ultimoSaveGeometricoRef = useRef(0);
+  const contadorDesvioRef = useRef(0);
+  const jaReativouGpsPassageiroRef = useRef(false);
 
-  // ========== REFS ==========
-  const watchIdRef = useRef(null); // ID do watcher GPS
-  const stateRef = useRef({
-    ultimaPos: null, // Última posição salva
-    ultimoTempo: null, // Timestamp da última posição
-    inicioDesvio: null, // Quando começou o desvio
-    ultimoTrecho: null, // Último trecho detectado
-    ultimoSave: 0, // Último salvamento (throttle)
-    contadorDesvio: 0, // Contador para desvio
-    jaReativouGpsPassageiro: false, // Já ativou GPS de passageiro
-  });
+  const viagemId = `${itinerario?.id?.toLowerCase()?.trim()}_${horario?.replace(":", "")}`;
 
-  // Hook de aprendizado de rotas (mede tempos entre paradas)
-  const { iniciarTrecho, finalizarTrecho } = useAprendizadoRotas({
-    itinerarioId: itinerario?.id,
-  });
-
-  // ========== FUNÇÕES DE PARADA ==========
-
-  /**
-   * Obtém coordenadas de uma parada (normalizadas)
-   */
   const obterCoordsParada = useCallback(
     (nomeParada) => {
       if (!nomeParada || !paradasData) return null;
       const dados = paradasData[nomeParada.toLowerCase().trim()];
       if (!dados?.location) return null;
-
-      let lat = Number(dados.location.latitude || dados.location._lat);
-      let lng = Number(dados.location.longitude || dados.location._long);
-      return { lat: lat > 0 ? lat * -1 : lat, lng: lng > 0 ? lng * -1 : lng };
+      return {
+        lat: Number(dados.location.latitude || dados.location._lat),
+        lng: Number(dados.location.longitude || dados.location._long),
+      };
     },
     [paradasData],
   );
 
-  /**
-   * Calcula raio dinâmico baseado na distância entre paradas
-   * Paradas mais distantes têm raio maior
-   */
-  const calcularRaioDinamico = useCallback(
-    (paradaA, paradaB) => {
-      const coordsA = obterCoordsParada(paradaA);
-      const coordsB = obterCoordsParada(paradaB);
-      if (!coordsA || !coordsB) return CONFIG.DESVIO_MAX_METROS;
-
-      const distancia = calculateDistance(
-        coordsA.lat,
-        coordsA.lng,
-        coordsB.lat,
-        coordsB.lng,
-      );
-      const raio = distancia * CONFIG.RAIO_DINAMICO_PERCENT;
-      return Math.min(
-        CONFIG.RAIO_MAXIMO_METROS,
-        Math.max(CONFIG.RAIO_MINIMO_METROS, raio),
-      );
-    },
-    [obterCoordsParada],
-  );
-
-  // ========== DETECÇÃO DE TRECHO ==========
-
-  /**
-   * Detecta em qual trecho do itinerário o ônibus está atualmente
-   * Baseado na posição GPS e na distância aos segmentos do trajeto
-   */
   const detectarTrechoAtual = useCallback(
-    (lat, lng, indiceAtualViagem) => {
-      if (!itinerario?.paradas?.length) return null;
+    (lat, lng, viagemAtiva) => {
+      if (!itinerario || !itinerario.paradas || itinerario.paradas.length < 2)
+        return null;
 
-      const paradas = itinerario.paradas.map((p) =>
-        (typeof p === "object" ? p.nome : p).toLowerCase().trim(),
+      const paradas = itinerario.paradas.map((p) => {
+        const nomeBruto = typeof p === "object" ? p.nome : p;
+        return nomeBruto.toLowerCase().trim().replace(/\s+/g, " ");
+      });
+
+      const idxOrigem = paradas.indexOf(
+        paradaOrigem.toLowerCase().trim().replace(/\s+/g, " "),
       );
-
-      const idxOrigem = paradas.indexOf(paradaOrigem?.toLowerCase().trim());
-      const idxDestino = paradas.indexOf(paradaDestino?.toLowerCase().trim());
+      const idxDestino = paradas.indexOf(
+        paradaDestino.toLowerCase().trim().replace(/\s+/g, " "),
+      );
 
       if (idxOrigem === -1 || idxDestino === -1 || idxOrigem >= idxDestino)
         return null;
 
-      let menorDistancia = Infinity;
-      let melhorChave = null;
-      const limiteBusca = Math.min(
-        (indiceAtualViagem ?? idxOrigem) + 2,
-        idxDestino - 1,
-      );
+      let menorDistanciaSegmento = Infinity;
+      let melhorChaveTrecho = null;
 
-      for (let i = indiceAtualViagem ?? idxOrigem; i <= limiteBusca; i++) {
+      const indiceAtualViagem = viagemAtiva?.indiceParada ?? idxOrigem;
+      const limiteBusca = Math.min(indiceAtualViagem + 1, idxDestino - 1);
+
+      for (let i = indiceAtualViagem; i <= limiteBusca; i++) {
         if (!paradas[i] || !paradas[i + 1]) continue;
 
-        const a = obterCoordsParada(paradas[i]);
-        const b = obterCoordsParada(paradas[i + 1]);
-        if (!a || !b) continue;
+        const pA = paradasData[paradas[i]];
+        const pB = paradasData[paradas[i + 1]];
 
-        const raio = calcularRaioDinamico(paradas[i], paradas[i + 1]);
-        const dist = distanciaAteSegmento({ lat, lng }, a, b);
+        if (!pA?.location || !pB?.location) continue;
 
-        if (dist < menorDistancia && dist <= raio) {
-          menorDistancia = dist;
-          melhorChave = `${itinerario.id}_${paradas[i]}-${paradas[i + 1]}`;
+        const aLat = Number(pA.location.latitude || pA.location._lat);
+        const aLng = Number(pA.location.longitude || pA.location._long);
+        const bLat = Number(pB.location.latitude || pB.location._lat);
+        const bLng = Number(pB.location.longitude || pB.location._long);
+
+        const distAoSegmento = distanciaAteSegmento(
+          lat,
+          lng,
+          aLat,
+          aLng,
+          bLat,
+          bLng,
+        );
+
+        if (distAoSegmento < menorDistanciaSegmento) {
+          menorDistanciaSegmento = distAoSegmento;
+
+          const idParadaA = paradas[i].replace(/\s+/g, "-");
+          const idParadaB = paradas[i + 1].replace(/\s+/g, "-");
+
+          melhorChaveTrecho = `${itinerario.id}_${idParadaA}-${idParadaB}`;
         }
       }
 
-      return melhorChave;
+      return menorDistanciaSegmento <= DESVIO_MAX_METROS
+        ? melhorChaveTrecho
+        : null;
     },
-    [
-      itinerario,
-      paradaOrigem,
-      paradaDestino,
-      obterCoordsParada,
-      calcularRaioDinamico,
-    ],
+    [itinerario, paradaOrigem, paradaDestino, paradasData],
   );
 
-  // ========== GERENCIAMENTO DE VIAGEM ==========
+  const promoverProximoRastreador = useCallback(async (viagemRef) => {
+    try {
+      const snap = await getDoc(viagemRef);
+      if (!snap.exists()) return;
+      const dados = snap.data();
 
-  /**
-   * Finaliza a viagem para o usuário atual
-   * - Promove próximo rastreador (se houver)
-   * - Limpa referência da viagem no usuário
-   * - Chama callback onExpulsar
-   */
-  const finalizarViagem = useCallback(
-    async (viagemRef, uid, motivo) => {
-      finalizarTrecho();
+      console.log("[Promoção] Dados atuais:", dados);
+      console.log("[Promoção] Próximo rastreador:", dados.proximoRastreador);
 
-      // Se for rastreador e não for destino, promove próximo
-      if (isRastreador && motivo !== "destino") {
-        const snap = await getDoc(viagemRef);
-        const dados = snap.data();
-        if (dados?.proximoRastreador) {
-          await updateDoc(viagemRef, {
-            rastreadorAtual: dados.proximoRastreador,
-            proximoRastreador: null,
-            atualizadoEm: serverTimestamp(),
-          });
-        } else {
-          await updateDoc(viagemRef, {
-            rastreadorAtual: null,
-            atualizadoEm: serverTimestamp(),
-          });
-        }
+      if (dados.proximoRastreador) {
+        await updateDoc(viagemRef, {
+          rastreadorAtual: dados.proximoRastreador,
+          proximoRastreador: null,
+          atualizadoEm: serverTimestamp(),
+        });
+        console.log(
+          "[Promoção] ✅ Rastreador promovido:",
+          dados.proximoRastreador.nome,
+        );
+      } else {
+        await updateDoc(viagemRef, {
+          rastreadorAtual: null,
+          atualizadoEm: serverTimestamp(),
+        });
+        console.log("[Promoção] ⚠️ Nenhum próximo rastreador - removido");
       }
+    } catch (e) {
+      console.error("Erro ao promover próximo rastreador:", e);
+    }
+  }, []);
 
-      // Limpa referência da viagem no usuário
+  const liberarUsuario = useCallback(async (uid) => {
+    try {
       await updateDoc(doc(db, "usuarios", uid), { viagemAtualId: null });
-      onExpulsar(motivo);
-    },
-    [isRastreador, finalizarTrecho, onExpulsar],
-  );
+    } catch (e) {
+      console.error("Erro ao limpar flag de viagem do usuário:", e);
+    }
+  }, []);
 
-  // ========== LÓGICA PRINCIPAL DO TICK ==========
-
-  /**
-   * Função principal chamada a cada atualização de GPS
-   * Gerencia todo o ciclo de rastreamento
-   */
   const tick = useCallback(
     async (pos, uid) => {
       if (!uid || !viagemId) return;
@@ -267,46 +190,48 @@ export const useRastreamento = ({
       const viagemRef = doc(db, "viagens_ativas", viagemId);
       const viagemSnap = await getDoc(viagemRef);
 
-      // Verifica se viagem ainda existe
       if (!viagemSnap.exists()) {
-        await finalizarViagem(viagemRef, uid, "cancelada");
+        onExpulsar("cancelada");
+        await liberarUsuario(uid);
         return;
       }
 
-      const viagemDados = viagemSnap.data();
+      const viagemAtivaDados = viagemSnap.data();
 
-      // Verifica se ainda é o rastreador (pode ter sido substituído)
-      if (isRastreador && viagemDados.rastreadorAtual?.uid !== uid) {
-        await finalizarViagem(viagemRef, uid, "rebaixado");
+      // Se for rastreador e perdeu o posto, expulsa
+      if (isRastreador && viagemAtivaDados.rastreadorAtual?.uid !== uid) {
+        if (viagemAtivaDados.proximoRastreador?.uid !== uid) {
+          onExpulsar("rebaixado");
+        }
         return;
       }
 
-      // Ativa GPS de passageiros próximos ao destino
+      // Para passageiros, reativa GPS quando próximo do destino
       if (
         !isRastreador &&
         onReativarGpsPassageiro &&
-        !stateRef.current.jaReativouGpsPassageiro
+        !jaReativouGpsPassageiroRef.current
       ) {
         const paradasLista = itinerario.paradas.map((p) =>
           (typeof p === "object" ? p.nome : p).toString().toLowerCase().trim(),
         );
         const idxDestino = paradasLista.indexOf(
-          paradaDestino?.toLowerCase().trim(),
+          paradaDestino.toLowerCase().trim(),
         );
-        const indiceAtual = viagemDados.indiceParada ?? 0;
+        const idxParadaAnterior = idxDestino - 1;
+        const indiceAtual = viagemAtivaDados.indiceParada ?? 0;
 
-        // Se está a 1 parada do destino, ativa GPS
         if (
-          idxDestino > 0 &&
-          indiceAtual >= idxDestino - 1 &&
+          idxParadaAnterior >= 0 &&
+          indiceAtual >= idxParadaAnterior &&
           indiceAtual < idxDestino
         ) {
-          stateRef.current.jaReativouGpsPassageiro = true;
+          jaReativouGpsPassageiroRef.current = true;
           onReativarGpsPassageiro();
         }
       }
 
-      // Atualiza parada automática (apenas rastreador)
+      // Atualiza parada automática (só rastreador)
       if (isRastreador) {
         await verificarEAtualizarParadaAutomatica(
           viagemId,
@@ -314,150 +239,198 @@ export const useRastreamento = ({
           pos.lng,
           itinerario,
           paradasData,
-          true,
         );
       }
 
-      // Detecta trecho atual para aprendizado
-      const chaveTrecho = detectarTrechoAtual(
+      const chaveTrechoAtual = detectarTrechoAtual(
         pos.lat,
         pos.lng,
-        viagemDados.indiceParada,
+        viagemAtivaDados,
       );
-      if (chaveTrecho) {
-        if (stateRef.current.ultimoTrecho !== chaveTrecho)
-          iniciarTrecho(chaveTrecho);
-        stateRef.current.ultimoTrecho = chaveTrecho;
-        stateRef.current.inicioDesvio = null;
-      } else if (isRastreador && !stateRef.current.inicioDesvio) {
-        stateRef.current.inicioDesvio = agora;
+
+      if (chaveTrechoAtual) {
+        if (
+          ultimoTrechoRef.current &&
+          ultimoTrechoRef.current !== chaveTrechoAtual
+        ) {
+          const tempoGastoMS = agora - tempoInicioTrechoRef.current;
+          const tempoGastoSegundos = Math.round(tempoGastoMS / 1000);
+
+          if (tempoGastoSegundos > 10) {
+            const underscoreIndex = ultimoTrechoRef.current.indexOf("_");
+            if (underscoreIndex !== -1) {
+              const itinerarioId = ultimoTrechoRef.current.substring(
+                0,
+                underscoreIndex,
+              );
+              const paradasPart = ultimoTrechoRef.current.substring(
+                underscoreIndex + 1,
+              );
+              const hyphenIndex = paradasPart.lastIndexOf("-");
+              if (hyphenIndex !== -1) {
+                const paradaA = paradasPart.substring(0, hyphenIndex);
+                const paradaB = paradasPart.substring(hyphenIndex + 1);
+
+                await salvarTempoTrecho({
+                  itinerarioId,
+                  paradaA,
+                  paradaB,
+                  tempoGastoSegundos,
+                });
+              }
+            }
+          }
+          tempoInicioTrechoRef.current = agora;
+        } else if (!ultimoTrechoRef.current) {
+          tempoInicioTrechoRef.current = agora;
+        }
+        ultimoTrechoRef.current = chaveTrechoAtual;
       }
 
-      // Verifica desvio prolongado (10 minutos fora da rota)
-      if (
-        isRastreador &&
-        stateRef.current.inicioDesvio &&
-        agora - stateRef.current.inicioDesvio >= CONFIG.TEMPO_DESVIO_EXPULSAR_MS
-      ) {
-        await finalizarViagem(viagemRef, uid, "desvio");
-        return;
+      // Monitoramento de desvio (só rastreador)
+      if (isRastreador) {
+        contadorDesvioRef.current += 1;
+        if (contadorDesvioRef.current >= DESVIO_CHECK_INTERVAL) {
+          contadorDesvioRef.current = 0;
+
+          if (!chaveTrechoAtual) {
+            if (!iniciouDesvioRef.current) {
+              iniciouDesvioRef.current = agora;
+            } else if (
+              agora - iniciouDesvioRef.current >=
+              TEMPO_DESVIO_EXPULSAR
+            ) {
+              await promoverProximoRastreador(viagemRef);
+              await liberarUsuario(uid);
+              onExpulsar("desvio");
+              return;
+            }
+          } else {
+            iniciouDesvioRef.current = null;
+          }
+        }
       }
 
       // Verifica chegada ao destino
       const coordsDestino = obterCoordsParada(paradaDestino);
-      if (
-        coordsDestino &&
-        calculateDistance(
+      if (coordsDestino) {
+        const distAteDestino = calculateDistance(
           pos.lat,
           pos.lng,
           coordsDestino.lat,
           coordsDestino.lng,
-        ) <= CONFIG.DIST_CHEGADA_METROS
-      ) {
-        await finalizarViagem(viagemRef, uid, "destino");
-        return;
+        );
+        if (distAteDestino <= DIST_CHEGADA_METROS) {
+          if (isRastreador) await promoverProximoRastreador(viagemRef);
+          await liberarUsuario(uid);
+          onExpulsar("destino");
+          return;
+        }
       }
 
-      // Salva telemetria (com throttle para economizar requisições)
+      // ========== SALVAMENTO DE TELEMETRIA ==========
       if (
         isRastreador &&
-        agora - stateRef.current.ultimoSave >= CONFIG.THROTTLE_SAVE_MS
+        agora - ultimoSaveGeometricoRef.current >= THROTTLE_SAVE_MS
       ) {
         let velKmh = 0;
-        let distanciaMovida = 0;
-
-        if (stateRef.current.ultimaPos && stateRef.current.ultimoTempo) {
-          const deltaT = agora - stateRef.current.ultimoTempo;
-          velKmh = calcularVelocidadeKmh(
-            stateRef.current.ultimaPos.lat,
-            stateRef.current.ultimaPos.lng,
-            pos.lat,
-            pos.lng,
-            deltaT,
-          );
-          distanciaMovida = calculateDistance(
-            stateRef.current.ultimaPos.lat,
-            stateRef.current.ultimaPos.lng,
-            pos.lat,
-            pos.lng,
-          );
+        if (ultimaPosRef.current && ultimoTempoRef.current) {
+          const deltaT = agora - ultimoTempoRef.current;
+          if (deltaT > 0) {
+            velKmh = calcularVelocidadeKmh(
+              ultimaPosRef.current.lat,
+              ultimaPosRef.current.lng,
+              pos.lat,
+              pos.lng,
+              deltaT,
+            );
+          }
         }
 
-        stateRef.current.ultimaPos = pos;
-        stateRef.current.ultimoTempo = agora;
+        ultimaPosRef.current = pos;
+        ultimoTempoRef.current = agora;
+        ultimoSaveGeometricoRef.current = agora;
 
-        // Só salva se velocidade for plausível e se moveu minimamente
-        if (
-          velKmh >= CONFIG.VEL_MIN_KMH &&
-          velKmh <= CONFIG.VEL_MAX_KMH &&
-          distanciaMovida >= CONFIG.MIN_MOVIMENTO_METROS
-        ) {
-          stateRef.current.ultimoSave = agora;
+        // 🔧 SALVA SEMPRE - sem filtros de velocidade mínima
+        try {
           await updateDoc(viagemRef, {
             lat: pos.lat,
             lng: pos.lng,
             velocidade: Math.round(velKmh),
             atualizadoEm: serverTimestamp(),
           });
+          console.log(
+            `[Rastreamento] Posição salva: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (${Math.round(velKmh)} km/h)`,
+          );
+        } catch (err) {
+          console.error("[Rastreamento] Erro ao salvar posição:", err);
         }
       }
     },
     [
       viagemId,
-      isRastreador,
-      itinerario,
-      paradaDestino,
-      paradasData,
+      paradaOrigem,
       obterCoordsParada,
       detectarTrechoAtual,
-      finalizarViagem,
-      iniciarTrecho,
+      paradaDestino,
+      isRastreador,
+      itinerario,
+      horario,
+      promoverProximoRastreador,
+      liberarUsuario,
+      onExpulsar,
       onReativarGpsPassageiro,
+      paradasData,
     ],
   );
 
-  // ========== SETUP DO GPS ==========
-
-  /**
-   * Inicia/para o watcher de GPS baseado no estado `ativo`
-   */
   useEffect(() => {
     if (!ativo) {
-      // Para o watcher e limpa estado
-      if (watchIdRef.current)
+      if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-      finalizarTrecho();
-      stateRef.current = {
-        ultimaPos: null,
-        ultimoTempo: null,
-        inicioDesvio: null,
-        ultimoTrecho: null,
-        ultimoSave: 0,
-        contadorDesvio: 0,
-        jaReativouGpsPassageiro: false,
-      };
+        watchIdRef.current = null;
+      }
+      ultimaPosRef.current = null;
+      ultimoTempoRef.current = null;
+      iniciouDesvioRef.current = null;
+      ultimoTrechoRef.current = null;
+      tempoInicioTrechoRef.current = null;
+      ultimoSaveGeometricoRef.current = 0;
+      contadorDesvioRef.current = 0;
+      jaReativouGpsPassageiroRef.current = false;
       return;
     }
 
-    if (watchIdRef.current || !navigator.geolocation) return;
+    if (watchIdRef.current !== null) return;
+    if (!navigator.geolocation) return;
 
     console.log("[useRastreamento] Iniciando watcher de GPS");
+
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const uid = auth.currentUser?.uid;
-        if (uid)
-          tick({ lat: pos.coords.latitude, lng: pos.coords.longitude }, uid);
+        const uid = auth.currentUser?.uid || null;
+        const position = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        console.log("[GPS] Posição capturada:", position);
+        tick(position, uid);
       },
-      (err) => console.warn("[GPS] Erro:", err.message),
-      CONFIG.GPS_OPTIONS,
+      (err) => console.warn("[Watch GPS] Erro:", err.message),
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
     );
 
     return () => {
-      if (watchIdRef.current)
+      if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
     };
-  }, [ativo, tick, finalizarTrecho]);
+  }, [ativo, tick]);
 
-  return null; // Hook sem UI, apenas lógica
+  return null;
 };

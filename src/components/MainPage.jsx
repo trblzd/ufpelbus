@@ -16,7 +16,6 @@ import { entrarNaViagem } from '../services/transporteService';
 import { usePersistViagem } from '../hooks/usePersistViagem';
 import { useEmbarqueAutomatico } from '../hooks/useEmbarqueAutomatico';
 import { usePageVisibility } from '../hooks/usePageVisibility';
-// usePreventNavigation REMOVIDO - não utilizado, causava erro de importação
 import { getAuth } from 'firebase/auth';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -39,6 +38,26 @@ const iconIntermediario = new L.DivIcon({
   html: `<div style="background-color: white; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #154370;"></div>`, 
   iconSize: [14, 14], 
   iconAnchor: [7, 7] 
+});
+
+// Ícone para posição do ônibus (azul com borda branca)
+const iconOnibus = new L.DivIcon({
+  className: 'custom-bus-icon',
+  html: `<div style="
+    background-color: #00418F; 
+    width: 20px; 
+    height: 20px; 
+    border-radius: 50%; 
+    border: 3px solid white;
+    box-shadow: 0 0 10px rgba(0,65,143,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: white;
+  ">🚌</div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
 });
 
 const TEMPO_CONFIRMACAO_MS = 5000; // Tempo de confirmação para embarque automático (5 segundos)
@@ -114,6 +133,7 @@ export default function MainPage({
   const [alertaMsg, setAlertaMsg] = useState(null);           // Mensagens de alerta (Snackbar)
   const [estimativaTempoReal, setEstimativaTempoReal] = useState(null); // Tempo estimado até o destino
   const [embarcando, setEmbarcando] = useState(false);        // Previne múltiplos cliques no botão de embarque
+  const [posicaoOnibus, setPosicaoOnibus] = useState(null);   // Posição atual do ônibus (lat/lng)
 
   const snackbarTimerRef = useRef(null);
   const intervalEstimativaRef = useRef(null);
@@ -300,8 +320,17 @@ export default function MainPage({
     
     // Escuta mudanças na viagem ativa em tempo real (onSnapshot)
     const unsub = onSnapshot(doc(db, "viagens_ativas", tripId), (d) => {
-      if (d.exists()) setViagemAtiva(d.data());
-      else setViagemAtiva(null);
+      if (d.exists()) {
+        const dados = d.data();
+        setViagemAtiva(dados);
+        // Atualiza posição do ônibus se disponível
+        if (dados.lat && dados.lng) {
+          setPosicaoOnibus({ lat: dados.lat, lng: dados.lng });
+        }
+      } else {
+        setViagemAtiva(null);
+        setPosicaoOnibus(null);
+      }
     });
     
     return () => { mounted = false; unsub(); };
@@ -404,7 +433,13 @@ export default function MainPage({
       setReconectando(true);
       getDoc(doc(db, "viagens_ativas", tripId))
         .then(snap => {
-          if (snap.exists()) setViagemAtiva(snap.data());
+          if (snap.exists()) {
+            const dados = snap.data();
+            setViagemAtiva(dados);
+            if (dados.lat && dados.lng) {
+              setPosicaoOnibus({ lat: dados.lat, lng: dados.lng });
+            }
+          }
           setReconectando(false);
         })
         .catch(() => setReconectando(false));
@@ -457,10 +492,10 @@ export default function MainPage({
    */
   const handleExpulsar = useCallback((motivo) => {
     const mensagens = { 
-      destino: 'Você chegou ao destino!', 
-      desvio: 'Você saiu da rota.', 
-      rebaixado: 'Outro passageiro assumiu o rastreamento.', 
-      cancelada: 'Viagem encerrada.' 
+      destino: 'Você chegou ao destino! Boa aula!',
+      desvio: 'Você saiu da rota. Viagem encerrada.',
+      rebaixado: 'Outro passageiro assumiu o rastreamento.',
+      cancelada: 'Viagem encerrada pelo sistema.'
     };
     setAlertaMsg({ texto: mensagens[motivo] || 'Viagem encerrada.', severidade: motivo === 'destino' ? 'success' : 'warning' });
     setStatusFluxo('expulso');
@@ -492,12 +527,16 @@ export default function MainPage({
     paradaOrigem: origem || '',
     paradaDestino: destino || '',
     paradasData,
+    rotasAprendidas, // ← PASSANDO rotasAprendidas para o useRastreamento
     onExpulsar: handleExpulsar,
     onReativarGpsPassageiro: () => {
       // Ativa GPS do passageiro quando está próximo do destino (para preparar desembarque)
       if (!isRastreador && statusFluxo === 'rastreando' && !gpsPassageiroAtivo) {
         setGpsPassageiroAtivo(true);
-        setAlertaMsg({ texto: `Atenção! Você está chegando perto do seu destino (${traduzirSigla(destino)}). Prepare-se para descer.`, severidade: 'info' });
+        setAlertaMsg({ 
+          texto: `Atenção! Você está chegando perto do seu destino (${traduzirSigla(destino)}). Prepare-se para descer.`, 
+          severidade: 'info' 
+        });
         setTimeout(() => setAlertaMsg(null), 5000);
       }
     },
@@ -546,19 +585,39 @@ export default function MainPage({
     return { media, label, cor };
   }, [viagemAtiva]);
 
-  /**
-   * Determina a lista de paradas que serão exibidas no mapa
-   * Se for consulta, mostra todas as paradas do itinerário
-   * Se for viagem, mostra apenas do embarque ao destino
-   */
-  const paradasTrecho = useMemo(() => {
-    const lista = itinerario?.paradas?.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()) || [];
-    if (modoApenasConsulta) return lista;
-    
-    const idxO = lista.indexOf(origem?.toLowerCase().trim());
-    const idxD = lista.indexOf(destino?.toLowerCase().trim(), idxO);
-    return (idxO !== -1 && idxD !== -1) ? lista.slice(idxO, idxD + 1) : lista;
-  }, [itinerario, origem, destino, modoApenasConsulta]);
+/**
+ * Determina a lista de paradas que serão exibidas no mapa
+ * Se for consulta, mostra todas as paradas do itinerário
+ * Se for viagem, mostra apenas do embarque ao destino
+ */
+const paradasTrecho = useMemo(() => {
+  if (!itinerario?.paradas) return [];
+  
+  // Normaliza a lista de paradas
+  const lista = itinerario.paradas.map(p => 
+    (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
+  );
+  
+  // Modo consulta: mostra todas as paradas
+  if (modoApenasConsulta) return lista;
+  
+  // Modo viagem: filtra apenas origem → destino
+  const origemNormalizada = origem?.toLowerCase().trim();
+  const destinoNormalizada = destino?.toLowerCase().trim();
+  
+  if (!origemNormalizada || !destinoNormalizada) return lista;
+  
+  const idxO = lista.indexOf(origemNormalizada);
+  const idxD = lista.indexOf(destinoNormalizada, idxO);
+  
+  // Se encontrou ambas as paradas na ordem correta, retorna apenas o trecho
+  if (idxO !== -1 && idxD !== -1 && idxO < idxD) {
+    return lista.slice(idxO, idxD + 1);
+  }
+  
+  // Fallback: retorna todas as paradas
+  return lista;
+}, [itinerario, origem, destino, modoApenasConsulta]);
 
   // Coordenadas de todas as paradas do trecho (para centralizar o mapa)
   const coords = useMemo(() => paradasTrecho.map(getCoords).filter(c => c !== null), [paradasTrecho, getCoords]);
@@ -588,16 +647,21 @@ export default function MainPage({
       
       let geometria = geometriaRotas[chave];
       
-      // Se não houver geometria importada do GPX para este trecho, NÃO desenha nada
-      if (!geometria || geometria.length < 2) {
-        return null;
-      }
-      
+      // Se não houver geometria importada do GPX para este trecho, desenha linha tracejada (estimada)
       const c1 = getCoords(idA);
       const c2 = getCoords(idB);
       if (!c1 || !c2) return null;
       
-      let positions = geometria.map(p => [p.lat, p.lng]);
+      let positions;
+      let isEstimada = false;
+      
+      if (geometria && geometria.length >= 2) {
+        positions = geometria.map(p => [p.lat, p.lng]);
+      } else {
+        // Fallback: linha reta tracejada (estimada)
+        positions = [c1, c2];
+        isEstimada = true;
+      }
       
       // Garante que a linha comece e termine exatamente nas paradas (correção de desvio >20m)
       const distInicio = calculateDistance(c1[0], c1[1], positions[0][0], positions[0][1]);
@@ -614,9 +678,9 @@ export default function MainPage({
       const totalTrechos = paradasTrecho.length - 1;
       const ratio = i / totalTrechos; 
       
-      const r = Math.round(255 - (255 - 14) * ratio);
-      const g = Math.round(138 + (165 - 138) * ratio);
-      const b = Math.round(49 - (49 - 3) * ratio);
+      const r = Math.round(14 + (255 - 14) * ratio);   // 14 → 255 (verde → vermelho)
+      const g = Math.round(165 - (165 - 3) * ratio);   // 165 → 3   (verde → vermelho)
+      const b = Math.round(3 + (49 - 3) * ratio);      // 3 → 49   (verde → vermelho)
       
       return (
         <Polyline 
@@ -624,8 +688,9 @@ export default function MainPage({
           positions={positions} 
           pathOptions={{ 
             color: `rgb(${r},${g},${b})`, 
-            weight: 6, 
-            opacity: 0.5,
+            weight: isEstimada ? 2 : 6, 
+            opacity: isEstimada ? 0.4 : 0.7,
+            dashArray: isEstimada ? '8, 6' : undefined,
             lineCap: 'round',
             lineJoin: 'round'
           }} 
@@ -676,7 +741,32 @@ export default function MainPage({
           {statusFluxo === 'rastreando' && isRastreador && (
             <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#00418F', color: 'white' }} />
           )}
+          {!isPageVisible && statusFluxo === 'rastreando' && (
+            <Chip label="App em segundo plano" size="small" sx={{ fontWeight: 'bold', bgcolor: '#FF8A31', color: 'white' }} />
+          )}
         </Stack>
+
+        {/* LEGENDA DO MAPA (restaurada do antigo) */}
+        {!modoApenasConsulta && (
+          <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'green' }} />
+              <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>INÍCIO</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'red' }} />
+              <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>FIM</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 16, height: 3, borderTop: '3px dashed #999' }} />
+              <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#999' }}>estimada</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 16, height: 3, bgcolor: '#999' }} />
+              <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#999' }}>real</Typography>
+            </Box>
+          </Stack>
+        )}
       </Paper>
       
       {/* MAPA */}
@@ -688,6 +778,25 @@ export default function MainPage({
         <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%', zIndex: 1 }}>
           <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
           {renderGradiente()}
+          
+          {/* MARCER DA POSIÇÃO DO ÔNIBUS EM TEMPO REAL */}
+          {posicaoOnibus && viagemAtiva && !modoApenasConsulta && (
+            <Marker 
+              position={[posicaoOnibus.lat, posicaoOnibus.lng]} 
+              icon={iconOnibus}
+            >
+              <Popup>
+                <Typography variant="body2" fontWeight="bold">
+                  🚌 Ônibus em movimento
+                  {viagemAtiva.velocidade !== undefined && (
+                    <Typography variant="caption" display="block" color="textSecondary">
+                      {viagemAtiva.velocidade} km/h
+                    </Typography>
+                  )}
+                </Typography>
+              </Popup>
+            </Marker>
+          )}
           
           {/* MARCERS das paradas */}
           {paradasTrecho.map((id, i) => {
