@@ -1,7 +1,5 @@
 // hooks/useRastreamento.js
-// HOOK DE RASTREAMENTO - Gerencia envio de posição GPS e promoção de rastreador
-
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { db, auth } from "../services/firebase";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { calculateDistance } from "../utils/geoUtils";
@@ -11,14 +9,14 @@ import {
 } from "../services/transporteService";
 
 // ========== CONFIGURAÇÕES ==========
-const VEL_MIN_KMH = 0; // 0 = sempre salva, mesmo parado
-const VEL_MAX_KMH = 70;
-const DESVIO_MAX_METROS = 150;
-const TEMPO_DESVIO_EXPULSAR = 120000; // 2 minutos
-const DIST_CHEGADA_METROS = 50;
-const THROTTLE_SAVE_MS = 3000; // 3 segundos
+const DESVIO_MAX_METROS = 50;
+const TEMPO_DESVIO_EXPULSAR = 300000; // 5 minutos
+const DIST_CHEGADA_METROS = 30;
+const THROTTLE_RASTREADOR_MS = 5000; // 5 segundos para rastreador
+const THROTTLE_PASSAGEIRO_MS = 15000; // 15 segundos para passageiro
 const DESVIO_CHECK_INTERVAL = 5;
 
+// ========== FUNÇÕES AUXILIARES ==========
 const calcularVelocidadeKmh = (lat1, lng1, lat2, lng2, deltaMs) => {
   if (deltaMs <= 0) return 0;
   const distMetros = calculateDistance(lat1, lng1, lat2, lng2);
@@ -41,9 +39,41 @@ const distanciaAteSegmento = (pLat, pLng, aLat, aLng, bLat, bLng) => {
   return calculateDistance(pLat, pLng, projLat, projLng);
 };
 
+const distanciaPontoPolilinha = (p, polilinha) => {
+  if (!polilinha || polilinha.length < 2) return Infinity;
+  let minDist = Infinity;
+  for (let i = 0; i < polilinha.length - 1; i++) {
+    const a = polilinha[i];
+    const b = polilinha[i + 1];
+    const dist = distanciaAteSegmento(p.lat, p.lng, a.lat, a.lng, b.lat, b.lng);
+    if (dist < minDist) minDist = dist;
+  }
+  return minDist;
+};
+
+/**
+ * Encontra o melhor índice do destino considerando múltiplas ocorrências
+ */
+const encontrarMelhorIndiceDestino = (paradasLista, destino, indiceAtual) => {
+  const indices = [];
+  paradasLista.forEach((p, i) => {
+    if (p === destino) indices.push(i);
+  });
+
+  if (indices.length === 0) return -1;
+  if (indices.length === 1) return indices[0];
+
+  for (const idx of indices) {
+    if (idx > indiceAtual) return idx;
+  }
+
+  return indices[indices.length - 1];
+};
+
 export const useRastreamento = ({
   ativo,
   isRastreador,
+  viagemId,
   itinerario,
   horario,
   paradaOrigem,
@@ -62,112 +92,53 @@ export const useRastreamento = ({
   const ultimoSaveGeometricoRef = useRef(0);
   const contadorDesvioRef = useRef(0);
   const jaReativouGpsPassageiroRef = useRef(false);
+  const [geometriaRotas, setGeometriaRotas] = useState({});
 
-  const viagemId = `${itinerario?.id?.toLowerCase()?.trim()}_${horario?.replace(":", "")}`;
-
-  const obterCoordsParada = useCallback(
-    (nomeParada) => {
-      if (!nomeParada || !paradasData) return null;
-      const dados = paradasData[nomeParada.toLowerCase().trim()];
-      if (!dados?.location) return null;
-      return {
-        lat: Number(dados.location.latitude || dados.location._lat),
-        lng: Number(dados.location.longitude || dados.location._long),
-      };
-    },
-    [paradasData],
-  );
-
-  const detectarTrechoAtual = useCallback(
-    (lat, lng, viagemAtiva) => {
-      if (!itinerario || !itinerario.paradas || itinerario.paradas.length < 2)
-        return null;
-
-      const paradas = itinerario.paradas.map((p) => {
-        const nomeBruto = typeof p === "object" ? p.nome : p;
-        return nomeBruto.toLowerCase().trim().replace(/\s+/g, " ");
-      });
-
-      const idxOrigem = paradas.indexOf(
-        paradaOrigem.toLowerCase().trim().replace(/\s+/g, " "),
+  // Carregar geometrias
+  useEffect(() => {
+    const carregarGeometrias = async () => {
+      if (!itinerario?.id || !paradasData) return;
+      const paradasLista = itinerario.paradas.map((p) =>
+        (typeof p === "object" ? p.nome : p).toString().toLowerCase().trim(),
       );
-      const idxDestino = paradas.indexOf(
-        paradaDestino.toLowerCase().trim().replace(/\s+/g, " "),
-      );
-
-      if (idxOrigem === -1 || idxDestino === -1 || idxOrigem >= idxDestino)
-        return null;
-
-      let menorDistanciaSegmento = Infinity;
-      let melhorChaveTrecho = null;
-
-      const indiceAtualViagem = viagemAtiva?.indiceParada ?? idxOrigem;
-      const limiteBusca = Math.min(indiceAtualViagem + 1, idxDestino - 1);
-
-      for (let i = indiceAtualViagem; i <= limiteBusca; i++) {
-        if (!paradas[i] || !paradas[i + 1]) continue;
-
-        const pA = paradasData[paradas[i]];
-        const pB = paradasData[paradas[i + 1]];
-
-        if (!pA?.location || !pB?.location) continue;
-
-        const aLat = Number(pA.location.latitude || pA.location._lat);
-        const aLng = Number(pA.location.longitude || pA.location._long);
-        const bLat = Number(pB.location.latitude || pB.location._lat);
-        const bLng = Number(pB.location.longitude || pB.location._long);
-
-        const distAoSegmento = distanciaAteSegmento(
-          lat,
-          lng,
-          aLat,
-          aLng,
-          bLat,
-          bLng,
-        );
-
-        if (distAoSegmento < menorDistanciaSegmento) {
-          menorDistanciaSegmento = distAoSegmento;
-
-          const idParadaA = paradas[i].replace(/\s+/g, "-");
-          const idParadaB = paradas[i + 1].replace(/\s+/g, "-");
-
-          melhorChaveTrecho = `${itinerario.id}_${idParadaA}-${idParadaB}`;
+      const geometrias = {};
+      for (let i = 0; i < paradasLista.length - 1; i++) {
+        const paradaA = paradasLista[i];
+        const paradaB = paradasLista[i + 1];
+        const docId = `${itinerario.id}_${paradaA}-${paradaB}`;
+        try {
+          const docSnap = await getDoc(doc(db, "rotas_geometricas", docId));
+          if (docSnap.exists()) {
+            const geo = docSnap.data().geometria;
+            if (geo && geo.length >= 2) {
+              geometrias[docId] = geo;
+            }
+          }
+        } catch (err) {
+          console.warn(`Erro ao carregar geometria ${docId}:`, err);
         }
       }
-
-      return menorDistanciaSegmento <= DESVIO_MAX_METROS
-        ? melhorChaveTrecho
-        : null;
-    },
-    [itinerario, paradaOrigem, paradaDestino, paradasData],
-  );
+      setGeometriaRotas(geometrias);
+    };
+    if (itinerario && ativo) carregarGeometrias();
+  }, [itinerario, paradasData, ativo]);
 
   const promoverProximoRastreador = useCallback(async (viagemRef) => {
     try {
       const snap = await getDoc(viagemRef);
       if (!snap.exists()) return;
       const dados = snap.data();
-
-      console.log("[Promoção] Dados atuais:", dados);
-      console.log("[Promoção] Próximo rastreador:", dados.proximoRastreador);
-
       if (dados.proximoRastreador) {
         await updateDoc(viagemRef, {
           rastreadorAtual: dados.proximoRastreador,
           proximoRastreador: null,
           atualizadoEm: serverTimestamp(),
         });
-        console.log(
-          "[Promoção] ✅ Rastreador promovido:",
-          dados.proximoRastreador.nome,
-        );
       } else {
         await updateDoc(viagemRef, {
           rastreadorAtual: null,
           atualizadoEm: serverTimestamp(),
         });
-        console.log("[Promoção] ⚠️ Nenhum próximo rastreador - removido");
       }
     } catch (e) {
       console.error("Erro ao promover próximo rastreador:", e);
@@ -181,6 +152,19 @@ export const useRastreamento = ({
       console.error("Erro ao limpar flag de viagem do usuário:", e);
     }
   }, []);
+
+  const obterCoordsParada = useCallback(
+    (nomeParada) => {
+      if (!nomeParada || !paradasData) return null;
+      const dados = paradasData[nomeParada.toLowerCase().trim()];
+      if (!dados?.location) return null;
+      return {
+        lat: Number(dados.location.latitude || dados.location._lat),
+        lng: Number(dados.location.longitude || dados.location._long),
+      };
+    },
+    [paradasData],
+  );
 
   const tick = useCallback(
     async (pos, uid) => {
@@ -198,7 +182,10 @@ export const useRastreamento = ({
 
       const viagemAtivaDados = viagemSnap.data();
 
-      // Se for rastreador e perdeu o posto, expulsa
+      if (viagemAtivaDados.chegouAoDestino) {
+        return;
+      }
+
       if (isRastreador && viagemAtivaDados.rastreadorAtual?.uid !== uid) {
         if (viagemAtivaDados.proximoRastreador?.uid !== uid) {
           onExpulsar("rebaixado");
@@ -206,7 +193,6 @@ export const useRastreamento = ({
         return;
       }
 
-      // Para passageiros, reativa GPS quando próximo do destino
       if (
         !isRastreador &&
         onReativarGpsPassageiro &&
@@ -220,7 +206,6 @@ export const useRastreamento = ({
         );
         const idxParadaAnterior = idxDestino - 1;
         const indiceAtual = viagemAtivaDados.indiceParada ?? 0;
-
         if (
           idxParadaAnterior >= 0 &&
           indiceAtual >= idxParadaAnterior &&
@@ -231,69 +216,190 @@ export const useRastreamento = ({
         }
       }
 
-      // Atualiza parada automática (só rastreador)
+      let velKmh = 0;
+      if (ultimaPosRef.current && ultimoTempoRef.current) {
+        const deltaT = agora - ultimoTempoRef.current;
+        if (deltaT > 0) {
+          velKmh = calcularVelocidadeKmh(
+            ultimaPosRef.current.lat,
+            ultimaPosRef.current.lng,
+            pos.lat,
+            pos.lng,
+            deltaT,
+          );
+        }
+      }
+
+      const paradasLista = itinerario.paradas.map((p) =>
+        (typeof p === "object" ? p.nome : p).toString().toLowerCase().trim(),
+      );
+
+      // ========== DETECÇÃO DE PARADA AUTOMÁTICA ==========
       if (isRastreador) {
-        await verificarEAtualizarParadaAutomatica(
+        const resultadoParada = await verificarEAtualizarParadaAutomatica(
           viagemId,
           pos.lat,
           pos.lng,
           itinerario,
           paradasData,
+          true,
+          velKmh,
         );
+
+        if (resultadoParada) {
+          const idxDestino = encontrarMelhorIndiceDestino(
+            paradasLista,
+            paradaDestino.toLowerCase().trim(),
+            resultadoParada.indiceDetectado,
+          );
+
+          if (
+            resultadoParada.indiceDetectado === idxDestino ||
+            resultadoParada.fimDoItinerario
+          ) {
+            if (isRastreador) await promoverProximoRastreador(viagemRef);
+            await liberarUsuario(uid);
+            onExpulsar("destino");
+            return;
+          }
+        }
       }
 
-      const chaveTrechoAtual = detectarTrechoAtual(
-        pos.lat,
-        pos.lng,
-        viagemAtivaDados,
+      // ========== VERIFICAÇÃO DE DESTINO POR DISTÂNCIA (FALLBACK) ==========
+      const idxDestino = encontrarMelhorIndiceDestino(
+        paradasLista,
+        paradaDestino.toLowerCase().trim(),
+        viagemAtivaDados.indiceParada ?? 0,
       );
 
-      if (chaveTrechoAtual) {
+      const coordsDestino = obterCoordsParada(paradaDestino);
+      if (coordsDestino) {
+        const distAteDestino = calculateDistance(
+          pos.lat,
+          pos.lng,
+          coordsDestino.lat,
+          coordsDestino.lng,
+        );
+
         if (
-          ultimoTrechoRef.current &&
-          ultimoTrechoRef.current !== chaveTrechoAtual
+          viagemAtivaDados.indiceParada === idxDestino &&
+          distAteDestino <= DIST_CHEGADA_METROS &&
+          velKmh < 3
         ) {
-          const tempoGastoMS = agora - tempoInicioTrechoRef.current;
-          const tempoGastoSegundos = Math.round(tempoGastoMS / 1000);
-
-          if (tempoGastoSegundos > 10) {
-            const underscoreIndex = ultimoTrechoRef.current.indexOf("_");
-            if (underscoreIndex !== -1) {
-              const itinerarioId = ultimoTrechoRef.current.substring(
-                0,
-                underscoreIndex,
-              );
-              const paradasPart = ultimoTrechoRef.current.substring(
-                underscoreIndex + 1,
-              );
-              const hyphenIndex = paradasPart.lastIndexOf("-");
-              if (hyphenIndex !== -1) {
-                const paradaA = paradasPart.substring(0, hyphenIndex);
-                const paradaB = paradasPart.substring(hyphenIndex + 1);
-
-                await salvarTempoTrecho({
-                  itinerarioId,
-                  paradaA,
-                  paradaB,
-                  tempoGastoSegundos,
-                });
-              }
-            }
-          }
-          tempoInicioTrechoRef.current = agora;
-        } else if (!ultimoTrechoRef.current) {
-          tempoInicioTrechoRef.current = agora;
+          if (isRastreador) await promoverProximoRastreador(viagemRef);
+          await liberarUsuario(uid);
+          onExpulsar("destino");
+          return;
         }
-        ultimoTrechoRef.current = chaveTrechoAtual;
+
+        const ultimoIndice = paradasLista.length - 1;
+        if (
+          viagemAtivaDados.indiceParada === ultimoIndice &&
+          distAteDestino <= DIST_CHEGADA_METROS &&
+          velKmh < 3
+        ) {
+          if (isRastreador) await promoverProximoRastreador(viagemRef);
+          await liberarUsuario(uid);
+          onExpulsar("destino");
+          return;
+        }
       }
 
-      // Monitoramento de desvio (só rastreador)
+      // ========== DETECÇÃO DE TRECHO E DESVIO COM GEOMETRIA ==========
+      let chaveTrechoAtual = null;
+      let distanciaDaRota = Infinity;
+
+      const idxsOrigem = [];
+      paradasLista.forEach((p, i) => {
+        if (p === paradaOrigem.toLowerCase().trim()) idxsOrigem.push(i);
+      });
+
+      const indiceAtualViagem = viagemAtivaDados.indiceParada ?? 0;
+      const limiteBusca = Math.min(
+        indiceAtualViagem + 2,
+        paradasLista.length - 1,
+      );
+
+      let melhorDist = Infinity;
+      let melhorChave = null;
+
+      for (
+        let i = indiceAtualViagem;
+        i <= limiteBusca && i < paradasLista.length - 1;
+        i++
+      ) {
+        if (!paradasLista[i] || !paradasLista[i + 1]) continue;
+
+        const chave = `${itinerario.id}_${paradasLista[i]}-${paradasLista[i + 1]}`;
+        const geometria = geometriaRotas[chave];
+
+        if (geometria && geometria.length >= 2) {
+          const dist = distanciaPontoPolilinha(pos, geometria);
+          if (dist < melhorDist) {
+            melhorDist = dist;
+            melhorChave = chave;
+          }
+        } else {
+          const coordsA = paradasData[paradasLista[i]]?.location;
+          const coordsB = paradasData[paradasLista[i + 1]]?.location;
+          if (coordsA && coordsB) {
+            const aLat = Number(coordsA.latitude || coordsA._lat);
+            const aLng = Number(coordsA.longitude || coordsA._long);
+            const bLat = Number(coordsB.latitude || coordsB._lat);
+            const bLng = Number(coordsB.longitude || coordsB._long);
+            const dist = distanciaAteSegmento(
+              pos.lat,
+              pos.lng,
+              aLat,
+              aLng,
+              bLat,
+              bLng,
+            );
+            if (dist < melhorDist) {
+              melhorDist = dist;
+              melhorChave = chave;
+            }
+          }
+        }
+      }
+
+      if (!melhorChave) {
+        const limiteBuscaExtendido = Math.min(
+          indiceAtualViagem + 3,
+          paradasLista.length - 1,
+        );
+        for (
+          let i = indiceAtualViagem + 1;
+          i <= limiteBuscaExtendido && i < paradasLista.length - 1;
+          i++
+        ) {
+          if (!paradasLista[i] || !paradasLista[i + 1]) continue;
+
+          const chave = `${itinerario.id}_${paradasLista[i]}-${paradasLista[i + 1]}`;
+          const geometria = geometriaRotas[chave];
+
+          if (geometria && geometria.length >= 2) {
+            const dist = distanciaPontoPolilinha(pos, geometria);
+            if (dist < melhorDist) {
+              melhorDist = dist;
+              melhorChave = chave;
+            }
+          }
+        }
+      }
+
+      if (melhorDist < DESVIO_MAX_METROS * 1.5) {
+        chaveTrechoAtual = melhorChave;
+        distanciaDaRota = melhorDist;
+      }
+
+      // ========== GERENCIAMENTO DE DESVIO ==========
       if (isRastreador) {
         contadorDesvioRef.current += 1;
         if (contadorDesvioRef.current >= DESVIO_CHECK_INTERVAL) {
           contadorDesvioRef.current = 0;
 
-          if (!chaveTrechoAtual) {
+          if (!chaveTrechoAtual || distanciaDaRota > DESVIO_MAX_METROS) {
             if (!iniciouDesvioRef.current) {
               iniciouDesvioRef.current = agora;
             } else if (
@@ -311,47 +417,55 @@ export const useRastreamento = ({
         }
       }
 
-      // Verifica chegada ao destino
-      const coordsDestino = obterCoordsParada(paradaDestino);
-      if (coordsDestino) {
-        const distAteDestino = calculateDistance(
-          pos.lat,
-          pos.lng,
-          coordsDestino.lat,
-          coordsDestino.lng,
-        );
-        if (distAteDestino <= DIST_CHEGADA_METROS) {
-          if (isRastreador) await promoverProximoRastreador(viagemRef);
-          await liberarUsuario(uid);
-          onExpulsar("destino");
-          return;
+      // ========== APRENDIZADO DE TEMPOS COM HORÁRIO ==========
+      if (chaveTrechoAtual) {
+        if (
+          ultimoTrechoRef.current &&
+          ultimoTrechoRef.current !== chaveTrechoAtual
+        ) {
+          const tempoGastoMS = agora - tempoInicioTrechoRef.current;
+          const tempoGastoSegundos = Math.round(tempoGastoMS / 1000);
+          if (tempoGastoSegundos > 10) {
+            const underscoreIndex = ultimoTrechoRef.current.indexOf("_");
+            if (underscoreIndex !== -1) {
+              const itinerarioId = ultimoTrechoRef.current.substring(
+                0,
+                underscoreIndex,
+              );
+              const paradasPart = ultimoTrechoRef.current.substring(
+                underscoreIndex + 1,
+              );
+              const hyphenIndex = paradasPart.lastIndexOf("-");
+              if (hyphenIndex !== -1) {
+                const paradaA = paradasPart.substring(0, hyphenIndex);
+                const paradaB = paradasPart.substring(hyphenIndex + 1);
+                await salvarTempoTrecho({
+                  itinerarioId,
+                  paradaA,
+                  paradaB,
+                  tempoGastoSegundos,
+                  horarioSaida: horario,
+                });
+              }
+            }
+          }
+          tempoInicioTrechoRef.current = agora;
+        } else if (!ultimoTrechoRef.current) {
+          tempoInicioTrechoRef.current = agora;
         }
+        ultimoTrechoRef.current = chaveTrechoAtual;
       }
 
       // ========== SALVAMENTO DE TELEMETRIA ==========
-      if (
-        isRastreador &&
-        agora - ultimoSaveGeometricoRef.current >= THROTTLE_SAVE_MS
-      ) {
-        let velKmh = 0;
-        if (ultimaPosRef.current && ultimoTempoRef.current) {
-          const deltaT = agora - ultimoTempoRef.current;
-          if (deltaT > 0) {
-            velKmh = calcularVelocidadeKmh(
-              ultimaPosRef.current.lat,
-              ultimaPosRef.current.lng,
-              pos.lat,
-              pos.lng,
-              deltaT,
-            );
-          }
-        }
-
+      // 5 segundos para rastreador, 15 segundos para passageiro
+      const throttleTime = isRastreador
+        ? THROTTLE_RASTREADOR_MS
+        : THROTTLE_PASSAGEIRO_MS;
+      if (agora - ultimoSaveGeometricoRef.current >= throttleTime) {
         ultimaPosRef.current = pos;
         ultimoTempoRef.current = agora;
         ultimoSaveGeometricoRef.current = agora;
 
-        // 🔧 SALVA SEMPRE - sem filtros de velocidade mínima
         try {
           await updateDoc(viagemRef, {
             lat: pos.lat,
@@ -359,9 +473,6 @@ export const useRastreamento = ({
             velocidade: Math.round(velKmh),
             atualizadoEm: serverTimestamp(),
           });
-          console.log(
-            `[Rastreamento] Posição salva: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (${Math.round(velKmh)} km/h)`,
-          );
         } catch (err) {
           console.error("[Rastreamento] Erro ao salvar posição:", err);
         }
@@ -369,21 +480,22 @@ export const useRastreamento = ({
     },
     [
       viagemId,
-      paradaOrigem,
-      obterCoordsParada,
-      detectarTrechoAtual,
-      paradaDestino,
-      isRastreador,
       itinerario,
       horario,
-      promoverProximoRastreador,
-      liberarUsuario,
+      paradaOrigem,
+      paradaDestino,
+      paradasData,
+      geometriaRotas,
+      isRastreador,
       onExpulsar,
       onReativarGpsPassageiro,
-      paradasData,
+      liberarUsuario,
+      promoverProximoRastreador,
+      obterCoordsParada,
     ],
   );
 
+  // WATCHER DE GPS
   useEffect(() => {
     if (!ativo) {
       if (watchIdRef.current !== null) {
@@ -413,7 +525,6 @@ export const useRastreamento = ({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         };
-        console.log("[GPS] Posição capturada:", position);
         tick(position, uid);
       },
       (err) => console.warn("[Watch GPS] Erro:", err.message),

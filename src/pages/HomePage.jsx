@@ -1,14 +1,15 @@
-// pages/HomePage.jsx
-// PÁGINA PRINCIPAL DO APLICATIVO
-// Permite buscar ônibus para embarque ou consultar horários fixos
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation';
 import { traduzirSigla } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
+import { 
+  calcularHorarioEstimadoParada, 
+  calcularTempoParaOnibusChegarAteVoce,
+  calcularHorarioChegadaOnibusAteVoce 
+} from '../services/transporteService';
 import { 
   Container, Box, Tabs, Tab, Paper, Typography, Button, 
   MenuItem, Select, FormControl, InputLabel, ToggleButtonGroup, 
@@ -24,40 +25,36 @@ import { useAppData } from '../App';
 
 // ==================== CONFIGURAÇÕES ====================
 
-// Tema global do Material-UI (consistente com o resto do app)
 const theme = createTheme({
   palette: {
-    primary: { main: '#00418F' },    // Azul institucional
-    secondary: { main: '#0EA503' },  // Verde para sucesso
-    warning: { main: '#FF8A31' },    // Laranja para avisos
-    error: { main: '#C4151C' },      // Vermelho para erros
+    primary: { main: '#00418F' },
+    secondary: { main: '#0EA503' },
+    warning: { main: '#FF8A31' },
+    error: { main: '#C4151C' },
     background: { default: '#F9F9F9' },
     text: { primary: '#00418F' },
   },
   shape: { borderRadius: 16 },
 });
 
-// Paradas que não devem ser exibidas (internas ou indefinidas)
 const PARADAS_IGNORADAS = ['int_', 'ponto-indefinido'];
 
 // ==================== COMPONENTE DE ITEM DE ÔNIBUS ====================
 
-/**
- * Componente que exibe um ônibus disponível na lista de resultados
- * Mostra horário, última posição conhecida, lotação e se é a rota mais rápida
- */
 const BusItem = ({ opt, onClick, safeTraduzir }) => {
-  // Estado da viagem ativa (vinda do Firebase em tempo real)
   const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null, atualizadoEm: null });
+  const [horarioEstimado, setHorarioEstimado] = useState(null);
+  const [carregandoEstimativa, setCarregandoEstimativa] = useState(false);
+  const [tempoParaOnibusChegar, setTempoParaOnibusChegar] = useState(null);
+  const [carregandoTempo, setCarregandoTempo] = useState(false);
+  const [horarioChegadaOnibus, setHorarioChegadaOnibus] = useState(null);
   
-  /**
-   * Escuta mudanças na viagem ativa em tempo real (onSnapshot)
-   * Atualiza as informações do ônibus conforme ele se move
-   */
+  // Buscar informações da viagem ativa
   useEffect(() => {
     if (!opt?.it?.id || !opt?.horario) return;
     
-    const tripId = `${opt.it.id}_${opt.horario.replace(':', '')}`;
+    const dataAtual = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const tripId = `${opt.it.id}_${opt.horario.replace(':', '')}_${dataAtual}`;
     const unsub = onSnapshot(doc(db, "viagens_ativas", tripId), (d) => {
       if (d.exists()) {
         setViagemInfo(d.data());
@@ -69,10 +66,117 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     return () => unsub();
   }, [opt]);
 
-  /**
-   * Verifica se a viagem expirou (baseado no horário de saída + duração)
-   * Se expirou, as informações não são mais confiáveis
-   */
+  // Buscar horário de chegada do ônibus até você
+  useEffect(() => {
+    const buscarHorarioChegadaOnibus = async () => {
+      if (!opt?.it?.id || !opt?.horario || !opt?.origem || !opt?.paradasLista) return;
+      if (!viagemInfo || viagemInfo.indiceParada === undefined) return;
+      
+      try {
+        const paradasLista = opt.paradasLista || [];
+        const indiceAtualOnibus = viagemInfo.indiceParada || 0;
+        
+        // Encontrar todas as ocorrências da origem
+        const idxsOrigem = [];
+        paradasLista.forEach((p, i) => {
+          if (p === opt.origem) idxsOrigem.push(i);
+        });
+        
+        // Verificar se o ônibus já passou de todas as ocorrências
+        let passouTodas = true;
+        for (const idx of idxsOrigem) {
+          if (idx > indiceAtualOnibus) {
+            passouTodas = false;
+            break;
+          }
+        }
+        
+        if (passouTodas && idxsOrigem.length > 0) {
+          setHorarioChegadaOnibus({
+            horarioEstimado: null,
+            status: 'passou',
+            mensagem: 'O ônibus já passou da sua parada!'
+          });
+          return;
+        }
+        
+        const resultado = await calcularHorarioChegadaOnibusAteVoce(
+          opt.it.id,
+          paradasLista,
+          opt.horario,
+          opt.origem,
+          indiceAtualOnibus
+        );
+        
+        if (resultado) {
+          setHorarioChegadaOnibus(resultado);
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar horário de chegada:", e);
+      }
+    };
+    
+    buscarHorarioChegadaOnibus();
+  }, [opt, viagemInfo]);
+
+  // Buscar tempo para ônibus chegar até você
+  useEffect(() => {
+    const buscarTempoEstimado = async () => {
+      if (!opt?.it?.id || !opt?.horario || !opt?.origem || !opt?.idxO) return;
+      if (!viagemInfo || viagemInfo.indiceParada === undefined) return;
+      
+      setCarregandoTempo(true);
+      try {
+        // Criar objeto viagemAtiva com o índice atual do ônibus
+        const viagemAtiva = { indiceParada: viagemInfo.indiceParada || 0 };
+        
+        const resultado = await calcularTempoParaOnibusChegarAteVoce(
+          viagemAtiva,
+          opt.it,
+          opt.origem,
+          opt.horario
+        );
+        if (resultado) {
+          setTempoParaOnibusChegar(resultado);
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar tempo estimado:", e);
+      } finally {
+        setCarregandoTempo(false);
+      }
+    };
+    
+    buscarTempoEstimado();
+  }, [opt, viagemInfo]);
+
+  // Buscar horário estimado de chegada ao destino
+  useEffect(() => {
+    const buscarHorarioEstimado = async () => {
+      if (!opt?.it?.id || !opt?.horario || !opt?.destino || !opt?.paradasLista) {
+        return;
+      }
+      
+      setCarregandoEstimativa(true);
+      try {
+        const resultado = await calcularHorarioEstimadoParada(
+          opt.it.id,
+          opt.paradasLista,
+          opt.horario,
+          opt.destino
+        );
+        if (resultado) {
+          setHorarioEstimado(resultado);
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar horário estimado:", e);
+      } finally {
+        setCarregandoEstimativa(false);
+      }
+    };
+    
+    buscarHorarioEstimado();
+  }, [opt]);
+
   const isExpirado = useMemo(() => {
     if (!viagemInfo.atualizadoEm || !opt.it?.duracaoEstimada) return false;
     const agora = new Date();
@@ -80,9 +184,6 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     return Math.floor((agora - dataPost) / 60000) > Number(opt.it.duracaoEstimada);
   }, [viagemInfo.atualizadoEm, opt.it]);
 
-  /**
-   * Formata timestamp para texto relativo (ex: "há 5 minutos")
-   */
   const formatarRelativo = (timestamp) => {
     if (!timestamp) return "";
     const dataPost = timestamp.toDate?.() || new Date(timestamp.seconds * 1000);
@@ -91,12 +192,11 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     return `há ${Math.floor(difSegundos / 60)} minutos`;
   };
 
-  // Retorna emoji baseado na lotação e se está expirado
   const getEmojiLotacao = (nivel) => {
-    if (isExpirado) return '🟡';  // Amarelo para expirado
-    if (nivel === 'lotado') return '🔴';  // Vermelho para lotado
-    if (nivel === 'medio') return '🟡';   // Amarelo para médio
-    if (nivel === 'vazio') return '🟢';   // Verde para vazio
+    if (isExpirado) return '🟡';
+    if (nivel === 'lotado') return '🔴';
+    if (nivel === 'medio') return '🟡';
+    if (nivel === 'vazio') return '🟢';
     return '🟡';
   };
 
@@ -106,7 +206,6 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     <Paper elevation={0} sx={{ mb: 2, border: '1px solid #eee', borderRadius: '16px', overflow: 'hidden' }}>
       <ListItemButton onClick={onClick} sx={{ p: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
-          {/* Linha superior: Categoria + Emoji de lotação */}
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
             <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
               {opt.cat}
@@ -116,14 +215,65 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
             </Typography>
           </Box>
           
-          {/* Informação de última parada conhecida */}
+          {/* Última parada conhecida */}
           <Typography variant="body2" color="secondary" fontWeight="500">
             {temInformacaoAtiva 
               ? `Visto em: ${safeTraduzir(viagemInfo.lastStop)} ${formatarRelativo(viagemInfo.atualizadoEm)}` 
               : "Sem Informações"}
           </Typography>
           
-          {/* Badge de "MAIS RÁPIDO" se aplicável */}
+          {/* HORÁRIO DE CHEGADA DO ÔNIBUS ATÉ VOCÊ */}
+          {horarioChegadaOnibus && horarioChegadaOnibus.status === 'chegando' && (
+            <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              ⏰ Chega às {horarioChegadaOnibus.horarioEstimado} ({horarioChegadaOnibus.paradasRestantes} paradas)
+            </Typography>
+          )}
+          {horarioChegadaOnibus && horarioChegadaOnibus.status === 'aqui' && (
+            <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              🚌 Ônibus está na sua parada!
+            </Typography>
+          )}
+          {horarioChegadaOnibus && horarioChegadaOnibus.status === 'passou' && (
+            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              ⚠️ Ônibus já passou da sua parada
+            </Typography>
+          )}
+          
+          {/* TEMPO PARA ÔNIBUS CHEGAR ATÉ VOCÊ */}
+          {carregandoTempo ? (
+            <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
+              ⏳ Calculando tempo de chegada...
+            </Typography>
+          ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'chegando' ? (
+            <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              🚌 Chega em você em {tempoParaOnibusChegar.minutos} min ({tempoParaOnibusChegar.paradasRestantes} paradas)
+            </Typography>
+          ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'aqui' ? (
+            <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              🚌 Ônibus está na sua parada!
+            </Typography>
+          ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'passou' ? (
+            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+              ⚠️ Ônibus já passou da sua parada
+            </Typography>
+          ) : null}
+          
+          {/* Horário estimado de chegada ao destino */}
+          {carregandoEstimativa ? (
+            <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
+              ⏰ Calculando horário estimado...
+            </Typography>
+          ) : horarioEstimado ? (
+            <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5 }}>
+              ⏰ Chegada prevista: <strong style={{ color: '#00418F' }}>{horarioEstimado.horarioEstimado}</strong>
+              {horarioEstimado.tempoTotalSegundos && (
+                <span style={{ fontSize: '0.7rem', color: '#888', marginLeft: 4 }}>
+                  ({Math.round(horarioEstimado.tempoTotalSegundos / 60)} min)
+                </span>
+              )}
+            </Typography>
+          ) : null}
+          
           {opt.maisRapida && temInformacaoAtiva && (
             <Chip 
               label="MAIS RÁPIDO" 
@@ -134,7 +284,6 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
           )}
         </Box>
         
-        {/* Horário de saída (grande e em negrito) */}
         <Typography variant="h5" fontWeight="900" color="primary">
           {opt.horario}
         </Typography>
@@ -148,23 +297,22 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
 export default function HomePage({ onLogout }) {
   const navigate = useNavigate();
   
-  // Dados globais do aplicativo (providos pelo AppDataContext)
   const { todosItinerarios, paradasCoordenadas, idsParadasUnicas, favoritos, loading: appLoading } = useAppData();
   
-  // ==================== ESTADOS ====================
-  const [gpsAtivo, setGpsAtivo] = useState(true);              // Controla se o GPS está ativo
-  const { position } = useLocation({ ativo: gpsAtivo });       // Posição atual do usuário
-  const jaPreencheuParadaRef = useRef(false);                  // Evita preencher origem múltiplas vezes
-  const [modo, setModo] = useState('embarcar');                // 'embarcar' ou 'verificar'
-  const [tabLinha, setTabLinha] = useState('Anglo');           // Aba selecionada (Anglo, Capão, etc.)
-  const [origemId, setOrigemId] = useState('');                // ID da parada de origem selecionada
-  const [destinoId, setDestinoId] = useState('');              // ID da parada de destino selecionada
-  const [opcoesEncontradas, setOpcoesEncontradas] = useState([]); // Ônibus disponíveis encontrados
+  const [gpsAtivo, setGpsAtivo] = useState(true);
+  const { position } = useLocation({ ativo: gpsAtivo });
+  const jaPreencheuParadaRef = useRef(false);
+  const [modo, setModo] = useState('embarcar');
+  const [tabLinha, setTabLinha] = useState('Anglo');
+  const [origemId, setOrigemId] = useState('');
+  const [destinoId, setDestinoId] = useState('');
+  const [opcoesEncontradas, setOpcoesEncontradas] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  
+  const cacheViagensRef = useRef({});
   
   const auth = getAuth();
 
-  // ==================== CONFIGURAÇÃO DE CATEGORIAS ====================
-  // Mapeamento de nomes amigáveis para IDs de itinerários
   const categoriesConfig = {
     Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
     Capão: ['anglocapao', 'capaoanglo', 'capaodireito', 'capaodireitobr', 'capaofamedanglo', 'capaolyceu', 'cotadacapao', 'direitocapao', 'famedcapao', 'lyceucapao'],
@@ -174,45 +322,27 @@ export default function HomePage({ onLogout }) {
     Palma: ['palmacp', 'palmapm']
   };
 
-  // ==================== FUNÇÕES AUXILIARES ====================
-  
-  /**
-   * Traduz uma sigla de parada para nome amigável
-   * Suporta tanto string quanto objeto { nome: "..." }
-   */
   const safeTraduzir = (valor) => {
     if (!valor) return "---";
     const siglaStr = typeof valor === 'object' ? valor.nome : valor;
     return traduzirSigla(siglaStr.toString());
   };
 
-  /**
-   * Normaliza o nome de uma parada para comparação (lowercase + trim)
-   */
   const normalizarNome = (p) => {
     return (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim();
   };
 
-  /**
-   * Faz logout do Firebase
-   */
   const handleFirebaseLogout = async () => { 
     await signOut(auth); 
     if (onLogout) onLogout(); 
   };
 
-  /**
-   * Reativa o GPS e limpa a origem selecionada
-   */
   const handleReativarGPS = () => { 
     setGpsAtivo(true); 
     jaPreencheuParadaRef.current = false; 
     setOrigemId(''); 
   };
 
-  /**
-   * Navega para a página do mapa (MainPage) com os parâmetros da viagem
-   */
   const navegarParaMapa = (it, horario, origem, destino, cat, modoAtual) => {
     const itinerarioStr = encodeURIComponent(JSON.stringify(it));
     const params = new URLSearchParams({ 
@@ -228,28 +358,18 @@ export default function HomePage({ onLogout }) {
 
   // ==================== EFEITOS ====================
   
-  /**
-   * Gerencia o GPS: desliga automaticamente após detectar a parada de origem
-   * Economiza bateria após encontrar a localização
-   */
   useEffect(() => {
-    // Se já temos uma origem e o GPS está ativo, desliga após 3 segundos
     if (origemId && origemId !== '' && gpsAtivo && !jaPreencheuParadaRef.current) {
       jaPreencheuParadaRef.current = true;
       setTimeout(() => setGpsAtivo(false), 3000);
     }
     
-    // Se não tem origem e o GPS está desligado, reativa
     if ((!origemId || origemId === '') && !gpsAtivo) { 
       setGpsAtivo(true); 
       jaPreencheuParadaRef.current = false; 
     }
   }, [origemId, gpsAtivo]);
 
-  /**
-   * Detecta a parada mais próxima da localização atual do usuário
-   * Preenche automaticamente o campo "Subir em"
-   */
   useEffect(() => {
     if (!gpsAtivo) return;
     
@@ -260,7 +380,6 @@ export default function HomePage({ onLogout }) {
       let menorDist = Infinity;
       let paradaVencedora = '';
       
-      // Calcula distância para cada parada e encontra a mais próxima
       for (const idSelect of idsParadasUnicas) {
         const coord = paradasCoordenadas[idSelect];
         if (coord && coord.lat && coord.lng) {
@@ -278,10 +397,6 @@ export default function HomePage({ onLogout }) {
     }
   }, [position, paradasCoordenadas, idsParadasUnicas, gpsAtivo, origemId]);
 
-  /**
-   * Agrupa horários por rota e destino (para o modo "verificar")
-   * Separa também rotas que passam pelo RU (Restaurante Universitário)
-   */
   const agrupamentoHorarios = useMemo(() => {
     const gruposNormal = {};
     const gruposRU = {};
@@ -298,7 +413,6 @@ export default function HomePage({ onLogout }) {
       const origem = paradas[0];
       const destino = paradas[paradas.length - 1];
       
-      // Define o label da rota (tratamento especial para ESEF e FaMed)
       let label;
       if (tabLinha === 'ESEF' || (tabLinha === 'FaMed' && origem?.includes('anglo') && destino?.includes('anglo'))) {
         label = `${safeTraduzir(origem)} - ${tabLinha} - ${safeTraduzir(destino)}`;
@@ -322,7 +436,6 @@ export default function HomePage({ onLogout }) {
       }
     }
     
-    // Ordena os grupos e horários
     const ordenar = (g) => {
       return Object.values(g)
         .map(grupo => ({ 
@@ -335,71 +448,162 @@ export default function HomePage({ onLogout }) {
     return { gruposNormal: ordenar(gruposNormal), gruposRU: ordenar(gruposRU) };
   }, [tabLinha, todosItinerarios]);
 
-  /**
-   * Busca ônibus disponíveis baseado na origem, destino e horário atual
-   * Retorna apenas viagens que ainda não expiraram
-   */
-  const handleBusca = () => {
+  // ==================== HANDLE BUSCA OTIMIZADO ====================
+  
+  const handleBusca = useCallback(async () => {
     if (!origemId || !destinoId) return;
-    
-    const ori = origemId.toLowerCase().trim();
-    const des = destinoId.toLowerCase().trim();
-    const agora = new Date();
-    const tempoAtualMin = agora.getHours() * 60 + agora.getMinutes();
-    
-    const matches = [];
-    
-    for (const it of todosItinerarios) {
-      if (!it.paradas || !Array.isArray(it.paradas)) continue;
-      
-      const paradas = it.paradas.map(normalizarNome);
-      const idxO = paradas.indexOf(ori);
-      const idxD = paradas.indexOf(des, idxO);
-      
-      // Verifica se o itinerário passa pela origem E destino (na ordem correta)
-      if (idxO !== -1 && idxD !== -1 && idxO < idxD) {
+    if (buscando) return;
+
+    setBuscando(true);
+
+    try {
+      const ori = origemId.toLowerCase().trim();
+      const des = destinoId.toLowerCase().trim();
+      const agora = new Date();
+      const tempoAtualMin = agora.getHours() * 60 + agora.getMinutes();
+      const dataAtual = agora.toISOString().slice(0, 10).replace(/-/g, '');
+
+      const hoje = agora.toISOString().slice(0, 10);
+      if (cacheViagensRef.current.data !== hoje) {
+        cacheViagensRef.current = { data: hoje, viagens: {} };
+      }
+
+      const matchesPotenciais = [];
+
+      for (const it of todosItinerarios) {
+        if (!it.paradas || !Array.isArray(it.paradas)) continue;
+
+        const paradas = it.paradas.map(normalizarNome);
+
+        const idxsO = [];
+        const idxsD = [];
+        paradas.forEach((p, i) => {
+          if (p === ori) idxsO.push(i);
+          if (p === des) idxsD.push(i);
+        });
+
+        let melhorDiff = Infinity;
+        let melhorIdxO = -1, melhorIdxD = -1;
+        for (const o of idxsO) {
+          for (const d of idxsD) {
+            if (o < d && (d - o) < melhorDiff) {
+              melhorDiff = d - o;
+              melhorIdxO = o;
+              melhorIdxD = d;
+            }
+          }
+        }
+
+        if (melhorIdxO === -1) continue;
+
+        const idxO = melhorIdxO;
+        const idxD = melhorIdxD;
+
         if (!it.horariosaida || !Array.isArray(it.horariosaida)) continue;
-        
+
         for (const horario of it.horariosaida) {
           const [h, m] = horario.split(':').map(Number);
           const tempoSaidaMin = h * 60 + m;
           const duracao = Number(it.duracaoEstimada) || 60;
           const tempoExpiracao = tempoSaidaMin + duracao + 15;
-          
-          // Filtra apenas viagens que ainda não expiraram
+
           if (tempoAtualMin > tempoExpiracao) continue;
-          
-          // Verifica se o horário é viável (considerando o tempo até a origem)
           if (tempoSaidaMin + (idxO * 1.5) >= tempoAtualMin - 20) {
-            matches.push({ 
-              it, 
-              horario, 
-              numParadas: idxD - idxO, 
-              tempoRef: tempoSaidaMin, 
-              cat: Object.keys(categoriesConfig).find(c => categoriesConfig[c].includes(it.id)) || "Rota" 
+            const tripId = `${it.id}_${horario.replace(':', '')}_${dataAtual}`;
+            matchesPotenciais.push({
+              it,
+              horario,
+              numParadas: idxD - idxO,
+              tempoRef: tempoSaidaMin,
+              cat: Object.keys(categoriesConfig).find(c => categoriesConfig[c].includes(it.id)) || "Rota",
+              tripId,
+              idxO,
+              origem: ori,
+              destino: des,
+              paradasLista: paradas,
             });
           }
         }
       }
-    }
-    
-    if (matches.length > 0) {
-      // Marca a rota com menos paradas como "mais rápida"
-      const minP = Math.min(...matches.map(m => m.numParadas));
-      setOpcoesEncontradas(
-        matches
-          .sort((a, b) => a.tempoRef - b.tempoRef)
-          .map(m => ({ ...m, maisRapida: m.numParadas === minP }))
-          .slice(0, 8)  // Limita a 8 resultados
-      );
-    } else {
+
+      if (matchesPotenciais.length === 0) {
+        setOpcoesEncontradas([]);
+        setBuscando(false);
+        return;
+      }
+
+      const matchesParaBuscar = [];
+      const matchesEmCache = [];
+      
+      for (const match of matchesPotenciais) {
+        if (cacheViagensRef.current.viagens[match.tripId] !== undefined) {
+          matchesEmCache.push({
+            match,
+            indiceAtualOnibus: cacheViagensRef.current.viagens[match.tripId]
+          });
+        } else {
+          matchesParaBuscar.push(match);
+        }
+      }
+
+      let resultadosBusca = [];
+      if (matchesParaBuscar.length > 0) {
+        const viagensPromises = matchesParaBuscar.map(async (match) => {
+          try {
+            const viagemRef = doc(db, "viagens_ativas", match.tripId);
+            const snap = await getDoc(viagemRef);
+            let indice = 0;
+            if (snap.exists()) {
+              indice = snap.data().indiceParada ?? 0;
+            }
+            cacheViagensRef.current.viagens[match.tripId] = indice;
+            return { match, indiceAtualOnibus: indice };
+          } catch (e) {
+            console.warn("Erro ao buscar viagem ativa", e);
+            cacheViagensRef.current.viagens[match.tripId] = 0;
+            return { match, indiceAtualOnibus: 0 };
+          }
+        });
+
+        resultadosBusca = await Promise.all(viagensPromises);
+      }
+
+      const todosResultados = [...matchesEmCache, ...resultadosBusca];
+
+      const matchesFiltrados = todosResultados
+        .filter(({ match, indiceAtualOnibus }) => indiceAtualOnibus <= match.idxO)
+        .map(({ match }) => match);
+
+      if (matchesFiltrados.length > 0) {
+        const minP = Math.min(...matchesFiltrados.map(m => m.numParadas));
+        setOpcoesEncontradas(
+          matchesFiltrados
+            .sort((a, b) => a.tempoRef - b.tempoRef)
+            .map(m => ({ ...m, maisRapida: m.numParadas === minP }))
+            .slice(0, 8)
+        );
+      } else {
+        setOpcoesEncontradas([]);
+      }
+    } catch (error) {
+      console.error("Erro na busca:", error);
       setOpcoesEncontradas([]);
+    } finally {
+      setBuscando(false);
     }
-  };
+  }, [origemId, destinoId, todosItinerarios, buscando]);
+
+  // Timer para atualizar a lista a cada 30 segundos
+useEffect(() => {
+  if (opcoesEncontradas.length === 0) return;
+  const interval = setInterval(() => {
+    handleBusca();
+  }, 30000); // 30 segundos
+  return () => clearInterval(interval);
+}, [opcoesEncontradas.length, handleBusca]);
 
   // ==================== RENDERIZAÇÃO ====================
   
-  // Tela de loading enquanto aguarda dados ou localização
   if (appLoading || !position || !position.lat || !position.lng) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#E2E8F0' }}>
@@ -426,12 +630,10 @@ export default function HomePage({ onLogout }) {
           overflow: 'hidden' 
         }}>
           
-          {/* HEADER - Logo do aplicativo */}
           <Typography variant="h4" fontWeight="900" color="primary" sx={{ mb: 2, textAlign: 'center', flexShrink: 0 }}>
             busepel
           </Typography>
           
-          {/* TOGGLE entre modo "embarcar" e "verificar" */}
           <ToggleButtonGroup 
             value={modo} 
             exclusive 
@@ -443,15 +645,12 @@ export default function HomePage({ onLogout }) {
             <ToggleButton value="verificar" sx={{ fontWeight: 'bold' }}>HORÁRIOS</ToggleButton>
           </ToggleButtonGroup>
           
-          {/* CONTEÚDO PRINCIPAL (com scroll) */}
           <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 0.5, display: 'flex', flexDirection: 'column' }}>
             
-            {/* MODO EMBARCAR - Busca de ônibus para viagem */}
             {modo === 'embarcar' && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, justifyContent: 'center' }}>
                 {opcoesEncontradas.length === 0 ? (
                   <>
-                    {/* SELECT de origem com GPS integrado */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <FormControl fullWidth variant="outlined">
                         <InputLabel id="label-origem" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Subir em</InputLabel>
@@ -487,7 +686,6 @@ export default function HomePage({ onLogout }) {
                       </Button>
                     </Box>
                     
-                    {/* SELECT de destino */}
                     <FormControl fullWidth variant="outlined">
                       <InputLabel id="label-destino" sx={{ backgroundColor: '#FFFFFF', px: 1 }}>Descer em</InputLabel>
                       <Select 
@@ -511,18 +709,17 @@ export default function HomePage({ onLogout }) {
                       </Select>
                     </FormControl>
                     
-                    {/* BOTÃO de busca */}
                     <Button 
                       fullWidth 
                       variant="contained" 
                       onClick={handleBusca} 
+                      disabled={buscando}
                       sx={{ py: 2, fontWeight: 'bold', borderRadius: '12px' }}
                     >
-                      VERIFICAR ÔNIBUS DISPONÍVEIS
+                      {buscando ? <CircularProgress size={24} color="inherit" /> : 'VERIFICAR ÔNIBUS DISPONÍVEIS'}
                     </Button>
                   </>
                 ) : (
-                  /* LISTA de ônibus encontrados */
                   <>
                     <List>
                       {opcoesEncontradas.map((opt, i) => (
@@ -542,10 +739,8 @@ export default function HomePage({ onLogout }) {
               </Box>
             )}
             
-            {/* MODO VERIFICAR - Exibe horários fixos por categoria */}
             {modo === 'verificar' && (
               <Box>
-                {/* TABS de categorias */}
                 <Tabs 
                   value={tabLinha} 
                   onChange={(e, v) => setTabLinha(v)} 
@@ -557,7 +752,6 @@ export default function HomePage({ onLogout }) {
                   ))}
                 </Tabs>
                 
-                {/* GRUPOS que passam pelo RU (destacados em laranja) */}
                 {agrupamentoHorarios.gruposRU.map((g, i) => (
                   <Box key={i} sx={{ mb: 3, p: 2, bgcolor: '#fff9f2', borderRadius: '16px', border: '1px solid #FF8A31' }}>
                     <Typography variant="subtitle2" color="warning.main" fontWeight="bold" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -582,7 +776,6 @@ export default function HomePage({ onLogout }) {
                   </Box>
                 ))}
                 
-                {/* GRUPOS normais (não passam pelo RU) */}
                 {agrupamentoHorarios.gruposNormal.map((g, i) => (
                   <Box key={i} sx={{ mb: 3 }}>
                     <Typography variant="subtitle2" color="primary" fontWeight="bold">
@@ -607,7 +800,6 @@ export default function HomePage({ onLogout }) {
             )}
           </Box>
           
-          {/* RODAPÉ - Botões de personalização e logout */}
           <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             <Button onClick={() => navigate('/personalizar')} startIcon={<EditIcon />} sx={{ color: '#00418F', fontWeight: 'bold', textTransform: 'none', fontSize: '0.85rem' }}>
               Personalizar
