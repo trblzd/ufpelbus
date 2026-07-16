@@ -1,6 +1,3 @@
-// components/MainPage.jsx
-// COMPONENTE PRINCIPAL DE VIAGEM - Gerencia embarque, rastreamento e visualização da rota
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
@@ -23,10 +20,10 @@ import { usePersistViagem } from '../hooks/usePersistViagem';
 import { useEmbarqueAutomatico } from '../hooks/useEmbarqueAutomatico';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { getAuth } from 'firebase/auth';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
 import 'leaflet/dist/leaflet.css';
+import './MainPage.css';
 
 // ==================== CONSTANTES E CONFIGURAÇÕES ====================
 
@@ -44,15 +41,22 @@ const iconIntermediario = new L.DivIcon({
   iconAnchor: [7, 7] 
 });
 
+const iconDestino = new L.DivIcon({ 
+  className: 'custom-stop-icon', 
+  html: `<div style="background-color: #0EA503; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #0EA503;"></div>`, 
+  iconSize: [14, 14], 
+  iconAnchor: [7, 7] 
+});
+
 const iconOnibus = new L.DivIcon({
   className: 'custom-bus-icon',
   html: `<div style="
-    background-color: #00418F; 
+    background-color: #1E58FF; 
     width: 20px; 
     height: 20px; 
     border-radius: 50%; 
     border: 3px solid white;
-    box-shadow: 0 0 10px rgba(0,65,143,0.5);
+    box-shadow: 0 0 10px rgba(30,88,255,0.5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -150,8 +154,7 @@ export default function MainPage({
     return getCoords(origem);
   }, [origem, paradasData, getCoords]);
 
-  // ==================== FUNÇÃO PARA CALCULAR HORÁRIO DE CHEGADA DO ÔNIBUS ====================
-  
+  // ==================== LÓGICA DE ESTIMATIVAS ====================
   const calcularHorarioChegadaOnibus = useCallback(async () => {
     if (!itinerario || !horario || !origem || Object.keys(paradasData).length === 0) return;
     if (modoApenasConsulta) return;
@@ -162,46 +165,18 @@ export default function MainPage({
       const paradasLista = itinerario.paradas.map(p => 
         (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
       );
-      
       const indiceAtualOnibus = viagemAtiva?.indiceParada ?? 0;
-      
       const resultado = await calcularHorarioChegadaOnibusAteVoce(
-        itinerario.id,
-        paradasLista,
-        horario,
-        origem,
-        indiceAtualOnibus
+        itinerario.id, paradasLista, horario, origem, indiceAtualOnibus
       );
-      
-      if (resultado) {
-        setHorarioChegadaOnibus(resultado);
-      }
+      if (resultado) setHorarioChegadaOnibus(resultado);
     } catch (error) {
-      console.warn("Erro ao calcular horário de chegada do ônibus:", error);
+      console.warn(error);
     } finally {
       setCarregandoEstimativa(false);
     }
   }, [itinerario, horario, origem, paradasData, modoApenasConsulta, statusFluxo, viagemAtiva]);
 
-  // Calcular quando os dados estiverem prontos
-  useEffect(() => {
-    if (itinerario && horario && origem && Object.keys(paradasData).length > 0) {
-      calcularHorarioChegadaOnibus();
-    }
-  }, [itinerario, horario, origem, paradasData, calcularHorarioChegadaOnibus]);
-
-  // Recalcular quando a viagem ativa mudar (ônibus se moveu)
-  useEffect(() => {
-    if (viagemAtiva && !modoApenasConsulta && statusFluxo === 'inicial') {
-      const timer = setTimeout(() => {
-        calcularHorarioChegadaOnibus();
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [viagemAtiva, calcularHorarioChegadaOnibus, modoApenasConsulta, statusFluxo]);
-
-  // ==================== FUNÇÃO PARA CALCULAR HORÁRIO ESTIMADO AO DESTINO ====================
-  
   const calcularHorarioDestino = useCallback(async () => {
     if (!itinerario || !horario || !destino || Object.keys(paradasData).length === 0) return;
     if (modoApenasConsulta) return;
@@ -212,32 +187,17 @@ export default function MainPage({
       const paradasLista = itinerario.paradas.map(p => 
         (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
       );
-      
       const resultado = await calcularHorarioEstimadoParada(
-        itinerario.id,
-        paradasLista,
-        horario,
-        destino
+        itinerario.id, paradasLista, horario, destino
       );
-      
-      if (resultado) {
-        setHorarioEstimadoDestino(resultado);
-      }
+      if (resultado) setHorarioEstimadoDestino(resultado);
     } catch (error) {
-      console.warn("Erro ao calcular horário estimado:", error);
+      console.warn(error);
     } finally {
       setCarregandoEstimativa(false);
     }
   }, [itinerario, horario, destino, paradasData, modoApenasConsulta, statusFluxo]);
 
-  useEffect(() => {
-    if (itinerario && horario && destino && Object.keys(paradasData).length > 0 && statusFluxo !== 'inicial') {
-      calcularHorarioDestino();
-    }
-  }, [itinerario, horario, destino, paradasData, statusFluxo, calcularHorarioDestino]);
-
-  // ==================== FUNÇÃO PARA CALCULAR ESTIMATIVAS DE TEMPO ====================
-  
   const calcularEstimativas = useCallback(async () => {
     if (!viagemAtiva || !itinerario || !horario || modoApenasConsulta) return;
     if (!origem && !destino) return;
@@ -246,10 +206,7 @@ export default function MainPage({
     try {
       if (statusFluxo === 'inicial' && origem) {
         const resultado = await calcularTempoParaOnibusChegarAteVoce(
-          viagemAtiva,
-          itinerario,
-          origem,
-          horario
+          viagemAtiva, itinerario, origem, horario
         );
         if (resultado) {
           setTempoParaOnibusChegar(resultado);
@@ -257,10 +214,7 @@ export default function MainPage({
         }
       } else if (statusFluxo !== 'inicial' && destino) {
         const resultado = await calcularTempoRestanteAteDestino(
-          viagemAtiva,
-          itinerario,
-          destino,
-          horario
+          viagemAtiva, itinerario, destino, horario
         );
         if (resultado) {
           setTempoAteDestino(resultado);
@@ -268,19 +222,25 @@ export default function MainPage({
         }
       }
     } catch (error) {
-      console.warn("Erro ao calcular estimativas:", error);
+      console.warn(error);
     } finally {
       setCarregandoTempo(false);
     }
   }, [viagemAtiva, itinerario, horario, origem, destino, statusFluxo, modoApenasConsulta]);
 
   useEffect(() => {
-    if (viagemAtiva && itinerario && horario) {
-      calcularEstimativas();
+    if (itinerario && horario && origem && Object.keys(paradasData).length > 0) {
+      calcularHorarioChegadaOnibus();
     }
-  }, [viagemAtiva, itinerario, horario, origem, destino, statusFluxo, calcularEstimativas]);
+    if (itinerario && horario && destino && Object.keys(paradasData).length > 0 && statusFluxo !== 'inicial') {
+      calcularHorarioDestino();
+    }
+  }, [itinerario, horario, origem, destino, paradasData, statusFluxo, calcularHorarioChegadaOnibus, calcularHorarioDestino]);
 
-  // Recalcular quando a viagem ativa mudar
+  useEffect(() => {
+    if (viagemAtiva && itinerario && horario) calcularEstimativas();
+  }, [viagemAtiva, itinerario, horario, calcularEstimativas]);
+
   useEffect(() => {
     if (viagemAtiva && !modoApenasConsulta) {
       const timer = setTimeout(() => {
@@ -290,10 +250,9 @@ export default function MainPage({
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [viagemAtiva, calcularHorarioChegadaOnibus, calcularHorarioDestino, calcularEstimativas, modoApenasConsulta]);
+  }, [viagemAtiva, modoApenasConsulta, calcularHorarioChegadaOnibus, calcularHorarioDestino, calcularEstimativas]);
 
-  // ==================== FUNÇÃO DE EMBARQUE ====================
-  
+  // ==================== FUNÇÕES DE INTERAÇÃO E EMBARQUE ====================
   const handleConfirmarEmbarque = useCallback(async () => {
     if (embarcando) return;
     setEmbarcando(true);
@@ -319,95 +278,75 @@ export default function MainPage({
         if (p === destino.toLowerCase().trim()) idxsDestino.push(i);
       });
       
-      let melhorOrigem = -1;
-      let melhorDestino = -1;
-      let menorDistancia = Infinity;
+      let melhorOrigem = -1; let melhorDestino = -1; let menorDistancia = Infinity;
       
       for (const o of idxsOrigem) {
         for (const d of idxsDestino) {
           if (o < d && (d - o) < menorDistancia) {
-            menorDistancia = d - o;
-            melhorOrigem = o;
-            melhorDestino = d;
+            menorDistancia = d - o; melhorOrigem = o; melhorDestino = d;
           }
         }
       }
       
       if (melhorOrigem === -1 || melhorDestino === -1) {
-        setAlertaMsg({ texto: 'Parada não encontrada no itinerário.', severidade: 'error' });
+        setAlertaMsg({ texto: 'Parada não encontrada.', severidade: 'error' });
         return;
       }
       
-      const meuIndiceAtual = melhorOrigem;
-      const isUltimaParada = meuIndiceAtual === paradasNormalizadas.length - 1;
-      
-      if (isUltimaParada) {
-        setAlertaMsg({ texto: 'Você está na última parada. Não é possível embarcar.', severidade: 'warning' });
+      if (melhorOrigem === paradasNormalizadas.length - 1) {
+        setAlertaMsg({ texto: 'Você está na última parada.', severidade: 'warning' });
         return;
       }
       
       let papel;
       try {
         papel = await entrarNaViagem(tripId, usuario, origem, destino, itinerario);
-        console.log("[Embarque] Papel retornado:", papel);
       } catch (e) {
-        console.error("[Embarque] Erro ao entrar na viagem:", e);
-        setAlertaMsg({ texto: 'Erro ao confirmar embarque: ' + e.message, severidade: 'error' });
+        setAlertaMsg({ texto: 'Erro: ' + e.message, severidade: 'error' });
         return;
       }
       
       if (papel === 'bloqueado') {
-        setAlertaMsg({ texto: 'Você já está em outra viagem ativa!', severidade: 'warning' });
+        setAlertaMsg({ texto: 'Você já está em outra viagem!', severidade: 'warning' });
         return;
       }
       
       await setDoc(doc(db, "viagens_ativas", tripId), {
         ultimaParada: origem,
-        indiceParada: meuIndiceAtual,
+        indiceParada: melhorOrigem,
         atualizadoEm: serverTimestamp(),
       }, { merge: true });
       
-      const isRastreador = papel === 'rastreador' || papel === 'reserva_prioritaria';
-      setIsRastreador(isRastreador);
+      setIsRastreador(papel === 'rastreador' || papel === 'reserva_prioritaria');
       setStatusFluxo('votando');
-      setAlertaMsg({ texto: `✅ Embarque confirmado! Você está no ônibus para ${traduzirSigla(destino)}.`, severidade: 'success' });
+      setAlertaMsg({ texto: `Embarque confirmado!`, severidade: 'success' });
       
     } catch (error) {
-      console.error("[Embarque] Erro geral:", error);
-      setAlertaMsg({ texto: 'Erro ao confirmar embarque. Tente novamente.', severidade: 'error' });
+      setAlertaMsg({ texto: 'Erro ao confirmar embarque.', severidade: 'error' });
     } finally {
       setEmbarcando(false);
     }
   }, [auth, itinerario, origem, destino, tripId, setIsRastreador, setStatusFluxo, embarcando]);
 
-  // ==================== EMBARQUE AUTOMÁTICO ====================
-  
   const { status: statusEmbarqueAuto, distancia: distanciaAuto, velocidade: velocidadeAuto, tempoRestante } = useEmbarqueAutomatico({
     ativo: embarqueAutomaticoAtivo && !modoApenasConsulta && statusFluxo === 'inicial' && !!position && !!coordsParadaOrigem,
     position,
     paradaOrigem: origem,
     paradaCoords: coordsParadaOrigem,
     onEmbarqueConfirmado: async () => {
-      setAlertaMsg({ texto: `Embarque automático detectado! Você está no ônibus para ${traduzirSigla(destino)}.`, severidade: 'success' });
-      setTimeout(() => setAlertaMsg(null), 5000);
+      setAlertaMsg({ texto: `Embarque automático detectado!`, severidade: 'success' });
       await handleConfirmarEmbarque();
       setEmbarqueAutomaticoAtivo(false);
     },
   });
 
-  // ==================== PERSISTÊNCIA ====================
-  
+  // ==================== PERSISTÊNCIA & FETCHING ====================
   useEffect(() => {
-    if (statusFluxo !== 'inicial' && statusFluxo !== 'expulso' && tripId) {
-      setViagemIdPersistida(tripId);
-    }
+    if (statusFluxo !== 'inicial' && statusFluxo !== 'expulso' && tripId) setViagemIdPersistida(tripId);
   }, [statusFluxo, tripId, setViagemIdPersistida]);
 
-  // ==================== CARREGAMENTO DE DADOS ====================
-  
   useEffect(() => {
     let mounted = true;
-    
     getDocs(collection(db, "paradas")).then(s => {
       const mapeamento = {};
       s.docs.forEach(d => { mapeamento[d.id.toLowerCase().trim()] = d.data(); });
@@ -419,149 +358,55 @@ export default function MainPage({
       if (d.exists()) {
         const dados = d.data();
         setViagemAtiva(dados);
-        if (dados.lat && dados.lng) {
-          setPosicaoOnibus({ lat: dados.lat, lng: dados.lng });
-        }
+        if (dados.lat && dados.lng) setPosicaoOnibus({ lat: dados.lat, lng: dados.lng });
       } else {
-        setViagemAtiva(null);
-        setPosicaoOnibus(null);
+        setViagemAtiva(null); setPosicaoOnibus(null);
       }
     });
-    
     return () => { mounted = false; unsub(); };
   }, [tripId]);
 
   useEffect(() => {
     const carregarGeometriasFixas = async () => {
       if (!itinerario?.id) return;
-      
-      const paradasLista = itinerario.paradas.map(p => 
-        (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
-      );
-      
+      const paradasLista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
       const geometrias = {};
-      
       for (let i = 0; i < paradasLista.length - 1; i++) {
-        const paradaA = paradasLista[i];
-        const paradaB = paradasLista[i + 1];
-        const docId = `${itinerario.id}_${paradaA}-${paradaB}`;
-        
+        const docId = `${itinerario.id}_${paradasLista[i]}-${paradasLista[i + 1]}`;
         try {
           const docSnap = await getDoc(doc(db, "rotas_geometricas", docId));
-          if (docSnap.exists()) {
-            const geo = docSnap.data().geometria;
-            if (geo && geo.length >= 2) {
-              geometrias[docId] = geo;
-            }
-          }
-        } catch (err) {
-          console.error(`Erro ao carregar ${docId}:`, err);
-        }
+          if (docSnap.exists() && docSnap.data().geometria?.length >= 2) geometrias[docId] = docSnap.data().geometria;
+        } catch (err) {}
       }
-      
       setGeometriaRotas(geometrias);
     };
-    
     carregarGeometriasFixas();
   }, [itinerario]);
 
   useEffect(() => {
     const carregarRotasTempo = async () => {
       if (!itinerario?.id) return;
-      
-      const paradasLista = itinerario.paradas.map(p => 
-        (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
-      );
-      
+      const paradasLista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
       const tempos = {};
-      
       for (let i = 0; i < paradasLista.length - 1; i++) {
-        const paradaA = paradasLista[i];
-        const paradaB = paradasLista[i + 1];
-        const docId = `${itinerario.id}_${paradaA}-${paradaB}`;
-        
+        const docId = `${itinerario.id}_${paradasLista[i]}-${paradasLista[i + 1]}`;
         const docSnap = await getDoc(doc(db, "rotas_aprendidas", docId));
-        if (docSnap.exists()) {
-          tempos[docId] = {
-            tempoMedioSegundos: docSnap.data().tempoMedioSegundos || 180,
-            totalAmostras: docSnap.data().totalAmostras || 0
-          };
-        } else {
-          tempos[docId] = { tempoMedioSegundos: 180, totalAmostras: 0 };
-        }
+        tempos[docId] = docSnap.exists() ? { tempoMedioSegundos: docSnap.data().tempoMedioSegundos || 180 } : { tempoMedioSegundos: 180 };
       }
-      
       setRotasAprendidas(tempos);
     };
-    
     carregarRotasTempo();
   }, [itinerario]);
-
-  // ==================== RECONEXÃO E VALIDAÇÕES ====================
-  
-  useEffect(() => {
-    const agora = Date.now();
-    const deveReconectar = isPageVisible && statusFluxo !== 'inicial' && statusFluxo !== 'expulso' && !reconectando && (agora - ultimaReconexaoRef.current) > 5000;
-    
-    if (deveReconectar) {
-      ultimaReconexaoRef.current = agora;
-      setReconectando(true);
-      getDoc(doc(db, "viagens_ativas", tripId))
-        .then(snap => {
-          if (snap.exists()) {
-            const dados = snap.data();
-            setViagemAtiva(dados);
-            if (dados.lat && dados.lng) {
-              setPosicaoOnibus({ lat: dados.lat, lng: dados.lng });
-            }
-          }
-          setReconectando(false);
-        })
-        .catch(() => setReconectando(false));
-    }
-  }, [isPageVisible, statusFluxo, tripId, reconectando]);
 
   useEffect(() => {
     const oriKey = origem?.toLowerCase().trim();
     if (position && paradasData[oriKey]) {
       const coords = getCoords(oriKey);
-      if (coords) {
-        setDistanciaAteParada(calculateDistance(position.lat, position.lng, coords[0], coords[1]));
-      }
+      if (coords) setDistanciaAteParada(calculateDistance(position.lat, position.lng, coords[0], coords[1]));
     }
   }, [position, paradasData, origem, getCoords]);
 
-  useEffect(() => {
-    if (modoApenasConsulta || !itinerario?.duracaoEstimada || !horario) return;
-    
-    const verificarExpiracao = async () => {
-      const [horas, minutos] = horario.split(':').map(Number);
-      const agora = new Date();
-      const horarioInicio = new Date();
-      horarioInicio.setHours(horas, minutos, 0, 0);
-      const horarioTermino = new Date(horarioInicio.getTime() + (itinerario.duracaoEstimada + 10) * 60000);
-      
-      if (agora > horarioTermino) {
-        await deleteDoc(doc(db, "viagens_ativas", tripId));
-        voltar();
-      }
-    };
-    
-    verificarExpiracao();
-    const interval = setInterval(verificarExpiracao, 60000);
-    return () => clearInterval(interval);
-  }, [itinerario, horario, voltar, modoApenasConsulta, tripId]);
-
-  // ==================== FUNÇÕES DE INTERAÇÃO DO USUÁRIO ====================
-  
   const handleExpulsar = useCallback((motivo) => {
-    const mensagens = { 
-      destino: 'Você chegou ao destino! Boa aula!',
-      desvio: 'Você saiu da rota. Viagem encerrada.',
-      rebaixado: 'Outro passageiro assumiu o rastreamento.',
-      cancelada: 'Viagem encerrada pelo sistema.'
-    };
-    setAlertaMsg({ texto: mensagens[motivo] || 'Viagem encerrada.', severidade: motivo === 'destino' ? 'success' : 'warning' });
     setStatusFluxo('expulso');
     setTimeout(() => voltar(), 3000);
   }, [voltar, setStatusFluxo]);
@@ -577,163 +422,124 @@ export default function MainPage({
 
   useRastreamento({
     ativo: (statusFluxo === 'rastreando' && isRastreador && !modoApenasConsulta) || (statusFluxo === 'rastreando' && gpsPassageiroAtivo),
-    isRastreador,
-    viagemId: tripId,
-    itinerario,
-    horario,
-    paradaOrigem: origem || '',
-    paradaDestino: destino || '',
-    paradasData,
-    rotasAprendidas,
-    onExpulsar: handleExpulsar,
+    isRastreador, viagemId: tripId, itinerario, horario,
+    paradaOrigem: origem || '', paradaDestino: destino || '',
+    paradasData, rotasAprendidas, onExpulsar: handleExpulsar,
     onReativarGpsPassageiro: () => {
-      if (!isRastreador && statusFluxo === 'rastreando' && !gpsPassageiroAtivo) {
-        setGpsPassageiroAtivo(true);
-        setAlertaMsg({ 
-          texto: `Atenção! Você está chegando perto do seu destino (${traduzirSigla(destino)}). Prepare-se para descer.`, 
-          severidade: 'info' 
-        });
-        setTimeout(() => setAlertaMsg(null), 5000);
-      }
+      if (!isRastreador && statusFluxo === 'rastreando' && !gpsPassageiroAtivo) setGpsPassageiroAtivo(true);
     },
   });
 
-  // ==================== FUNÇÕES DE FORMATAÇÃO E CÁLCULO ====================
-  
-  const formatarRelativo = (timestamp) => {
-    if (!timestamp) return "...";
-    const agora = new Date();
-    const dataPost = timestamp.toDate();
-    const difSegundos = Math.floor((agora - dataPost) / 1000);
-    if (difSegundos < 60) return "Agora mesmo";
-    return `Há ${Math.floor(difSegundos / 60)} min`;
-  };
-
   const infoLotacao = useMemo(() => {
     if (!viagemAtiva?.historicoLotacao || viagemAtiva.historicoLotacao.length === 0) return null;
-    
     const agoraMs = Date.now();
-    const cincoMinutosMs = 5 * 60 * 1000;
-    
     const votosRecentes = viagemAtiva.historicoLotacao.filter(voto => {
       const dataVoto = voto.data?.toDate ? voto.data.toDate().getTime() : (voto.data?.seconds * 1000 || agoraMs);
-      return (agoraMs - dataVoto) <= cincoMinutosMs;
+      return (agoraMs - dataVoto) <= 5 * 60 * 1000;
     });
-    
     if (votosRecentes.length === 0) return null;
-    
     const soma = votosRecentes.reduce((acc, curr) => acc + curr.valor, 0);
     const media = parseFloat((soma / votosRecentes.length).toFixed(1));
-    
     let label = "Vazio", cor = "#0EA503";
     if (media > 4.0) { label = "Lotado"; cor = "#C4151C"; }
     else if (media > 2.5) { label = "Médio"; cor = "#FF8A31"; }
-    
     return { media, label, cor };
   }, [viagemAtiva]);
 
   const paradasTrecho = useMemo(() => {
     if (!itinerario?.paradas) return [];
-    
-    const lista = itinerario.paradas.map(p => 
-      (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
-    );
-    
-    if (modoApenasConsulta) return lista;
-    
-    const origemNormalizada = origem?.toLowerCase().trim();
-    const destinoNormalizada = destino?.toLowerCase().trim();
-    
-    if (!origemNormalizada || !destinoNormalizada) return lista;
-    
-    const idxsO = [];
-    const idxsD = [];
-    lista.forEach((p, i) => {
-      if (p === origemNormalizada) idxsO.push(i);
-      if (p === destinoNormalizada) idxsD.push(i);
-    });
-    
-    let melhorDiff = Infinity;
-    let melhorIdxO = -1, melhorIdxD = -1;
+    const lista = itinerario.paradas.map(p => (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim());
+    if (modoApenasConsulta || !origem || !destino) return lista;
+    const ori = origem.toLowerCase().trim(); const dst = destino.toLowerCase().trim();
+    const idxsO = []; const idxsD = [];
+    lista.forEach((p, i) => { if (p === ori) idxsO.push(i); if (p === dst) idxsD.push(i); });
+    let melhorDiff = Infinity; let melhorIdxO = -1, melhorIdxD = -1;
     for (const o of idxsO) {
       for (const d of idxsD) {
-        if (o < d && (d - o) < melhorDiff) {
-          melhorDiff = d - o;
-          melhorIdxO = o;
-          melhorIdxD = d;
-        }
+        if (o < d && (d - o) < melhorDiff) { melhorDiff = d - o; melhorIdxO = o; melhorIdxD = d; }
       }
     }
-    
-    if (melhorIdxO !== -1 && melhorIdxD !== -1) {
-      return lista.slice(melhorIdxO, melhorIdxD + 1);
-    }
-    
+    if (melhorIdxO !== -1 && melhorIdxD !== -1) return lista.slice(melhorIdxO, melhorIdxD + 1);
     return lista;
   }, [itinerario, origem, destino, modoApenasConsulta]);
 
   const coords = useMemo(() => paradasTrecho.map(getCoords).filter(c => c !== null), [paradasTrecho, getCoords]);
+  const progressoEmbarque = useMemo(() => statusEmbarqueAuto !== 'proximo' || !tempoRestante ? 0 : ((TEMPO_CONFIRMACAO_MS - tempoRestante) / TEMPO_CONFIRMACAO_MS) * 100, [statusEmbarqueAuto, tempoRestante]);
 
-  const progressoEmbarque = useMemo(() => {
-    if (statusEmbarqueAuto !== 'proximo' || !tempoRestante) return 0;
-    return ((TEMPO_CONFIRMACAO_MS - tempoRestante) / TEMPO_CONFIRMACAO_MS) * 100;
-  }, [statusEmbarqueAuto, tempoRestante]);
+  // ==================== TEXTO DA ESTIMATIVA ====================
+  const estimativaTexto = useMemo(() => {
+    if (carregandoTempo) return "Calculando...";
+    if (statusFluxo === 'inicial' && tempoParaOnibusChegar) return `${tempoParaOnibusChegar.minutos} min`;
+    if (statusFluxo !== 'inicial' && tempoAteDestino) return `${tempoAteDestino.minutos} min`;
+    return "--";
+  }, [carregandoTempo, statusFluxo, tempoParaOnibusChegar, tempoAteDestino]);
 
-  // ==================== RENDERIZAÇÃO DO MAPA ====================
-  
+  // ==================== RENDER DOS TRAÇOS DO MAPA COM GRADIENTE ====================
   const renderGradiente = () => {
     if (paradasTrecho.length < 2) return null;
     
-    return paradasTrecho.map((id, i) => {
+    // Determinar índices de origem e destino
+    const oriIdx = origem ? paradasTrecho.findIndex(p => p === origem.toLowerCase().trim()) : -1;
+    const dstIdx = destino ? paradasTrecho.findIndex(p => p === destino.toLowerCase().trim()) : -1;
+    
+    // Se não tiver origem e destino definidos, usar toda a rota
+    const startIdx = (oriIdx !== -1 && dstIdx !== -1) ? oriIdx : 0;
+    const endIdx = (oriIdx !== -1 && dstIdx !== -1) ? dstIdx : paradasTrecho.length - 1;
+    const totalTramos = endIdx - startIdx;
+    
+    return paradasTrecho.map((idA, i) => {
       if (i === paradasTrecho.length - 1) return null;
-      
-      const idA = id;
       const idB = paradasTrecho[i + 1];
       const chave = `${itinerario.id}_${idA}-${idB}`;
-      
-      let geometria = geometriaRotas[chave];
-      
-      const c1 = getCoords(idA);
+      const geometria = geometriaRotas[chave];
+      const c1 = getCoords(idA); 
       const c2 = getCoords(idB);
       if (!c1 || !c2) return null;
       
-      let positions;
+      let positions; 
       let isEstimada = false;
-      
       if (geometria && geometria.length >= 2) {
         positions = geometria.map(p => [p.lat, p.lng]);
       } else {
-        positions = [c1, c2];
+        positions = [c1, c2]; 
         isEstimada = true;
       }
       
-      const distInicio = calculateDistance(c1[0], c1[1], positions[0][0], positions[0][1]);
-      if (distInicio > 20) {
-        positions = [c1, ...positions];
+      // Determinar se este trecho está entre origem e destino
+      const isActiveSegment = (oriIdx !== -1 && dstIdx !== -1) 
+        ? (i >= oriIdx && i < dstIdx)
+        : true; // Se não tem origem/destino, mostrar toda a rota
+      
+      // Calcular cor baseada na posição no trecho (gradiente vermelho -> verde)
+      let cor = '#444444';
+      let weight = 2;
+      let opacity = 0.3;
+      
+      if (isActiveSegment) {
+        // Calcular progresso apenas nos trechos ativos
+        const progresso = totalTramos > 0 ? (i - startIdx) / totalTramos : 0;
+        
+        // Gradiente direto: vermelho (início) -> verde (fim)
+        // Usando interpolação linear simples entre vermelho e verde
+        const r = Math.round(255 * (1 - progresso));
+        const g = Math.round(255 * progresso);
+        const b = 0; // Sem azul para gradiente puro vermelho->verde
+        
+        cor = `rgb(${r}, ${g}, ${b})`;
+        weight = isEstimada ? 4 : 6;
+        opacity = 0.5;
       }
-      
-      const distFim = calculateDistance(c2[0], c2[1], positions[positions.length-1][0], positions[positions.length-1][1]);
-      if (distFim > 20) {
-        positions = [...positions, c2];
-      }
-      
-      const totalTrechos = paradasTrecho.length - 1;
-      const ratio = i / totalTrechos; 
-      
-      const r = Math.round(14 + (255 - 14) * ratio);
-      const g = Math.round(165 - (165 - 3) * ratio);
-      const b = Math.round(3 + (49 - 3) * ratio);
       
       return (
         <Polyline 
           key={i} 
           positions={positions} 
           pathOptions={{ 
-            color: `rgb(${r},${g},${b})`, 
-            weight: isEstimada ? 2 : 6, 
-            opacity: isEstimada ? 0.4 : 0.6,
-            dashArray: isEstimada ? '8, 6' : undefined,
-            lineCap: 'round',
+            color: cor,
+            weight: weight,
+            opacity: opacity,
+            dashArray: isEstimada && isActiveSegment ? '10, 8' : undefined,
+            lineCap: 'round', 
             lineJoin: 'round'
           }} 
         />
@@ -746,264 +552,170 @@ export default function MainPage({
     setAlertaMsg(null);
   };
 
-  // ==================== RENDERIZAÇÃO CONDICIONAL ====================
-  
   if (loading || reconectando) return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#1A1A1A' }}>
       <CircularProgress />
-      <Typography variant="body2" color="textSecondary">{reconectando ? 'Reconectando...' : 'Carregando...'}</Typography>
+      <Typography variant="body2" color="#A1A1AA">{reconectando ? 'Reconectando...' : 'Carregando...'}</Typography>
     </Box>
   );
 
-  // ==================== RENDERIZAÇÃO PRINCIPAL ====================
   return (
-    <Box sx={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+    <div className="mainpage-wrapper">
       
-      {/* HEADER */}
-      <Paper elevation={2} sx={{ pt: 'calc(15px + env(safe-area-inset-top))', pb: 2, zIndex: 1100, borderRadius: 0, backgroundColor: '#f9f9f9', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-        <Typography variant="h6" fontWeight="bold" color="primary">{categoria || "Rota"} - {horario}</Typography>
-        
-        {!modoApenasConsulta && (
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-            {viagemAtiva ? (
-              <>Visto em: <b>{traduzirSigla(viagemAtiva.ultimaParada)}</b> {formatarRelativo(viagemAtiva.atualizadoEm)}</>
-            ) : "Aguardando atualização..."}
-          </Typography>
-        )}
-        
-        <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap', justifyContent: 'center' }}>
-          
-          {/* TEMPO PARA ÔNIBUS CHEGAR ATÉ VOCÊ (antes de embarcar) */}
-          {statusFluxo === 'inicial' && tempoParaOnibusChegar && !modoApenasConsulta && !carregandoTempo && (
-            <Chip 
-              icon={<AccessTimeIcon sx={{ fontSize: 14 }} />} 
-              label={`🚌 Chega em ${tempoParaOnibusChegar.minutos} min`}
-              color="primary" 
-              size="small" 
-              sx={{ fontWeight: 'bold' }} 
-            />
-          )}
-          
-          {/* TEMPO PARA CHEGAR AO DESTINO (após embarcar) */}
-          {statusFluxo !== 'inicial' && tempoAteDestino && !modoApenasConsulta && !carregandoTempo && (
-            <Chip 
-              icon={<AccessTimeIcon sx={{ fontSize: 14 }} />} 
-              label={`Chegada em ${tempoAteDestino.minutos} min`}
-              color="secondary" 
-              size="small" 
-              sx={{ fontWeight: 'bold' }} 
-            />
-          )}
-          
-          {carregandoTempo && !modoApenasConsulta && (
-            <Chip 
-              label="⏳ Calculando..." 
-              size="small" 
-              sx={{ fontWeight: 'bold', bgcolor: '#FFF3E0', color: '#E65100' }} 
-            />
-          )}
-          
-          {/* HORÁRIO DE CHEGADA DO ÔNIBUS ATÉ VOCÊ (antes de embarcar) */}
-          {!modoApenasConsulta && horarioChegadaOnibus && !carregandoEstimativa && statusFluxo === 'inicial' && horarioChegadaOnibus.status === 'chegando' && (
-            <Chip 
-              label={`⏰ Ônibus chega às ${horarioChegadaOnibus.horarioEstimado}`} 
-              size="small" 
-              sx={{ 
-                fontWeight: 'bold', 
-                bgcolor: '#E3F2FD', 
-                color: '#0D47A1',
-                '& .MuiChip-label': { fontWeight: 'bold' }
-              }} 
-            />
-          )}
-          
-          {/* HORÁRIO ESTIMADO DE CHEGADA AO DESTINO (após embarcar) */}
-          {!modoApenasConsulta && horarioEstimadoDestino && !carregandoEstimativa && statusFluxo !== 'inicial' && (
-            <Chip 
-              label={`⏰ Previsto destino: ${horarioEstimadoDestino.horarioEstimado}`} 
-              size="small" 
-              sx={{ 
-                fontWeight: 'bold', 
-                bgcolor: '#E8F5E9', 
-                color: '#2E7D32',
-                '& .MuiChip-label': { fontWeight: 'bold' }
-              }} 
-            />
-          )}
-          
-          {carregandoEstimativa && !modoApenasConsulta && (
-            <Chip 
-              label="⏰ Calculando..." 
-              size="small" 
-              sx={{ fontWeight: 'bold', bgcolor: '#FFF3E0', color: '#E65100' }} 
-            />
-          )}
-          
-          {infoLotacao && (
-            <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />
-          )}
-          {statusFluxo === 'rastreando' && isRastreador && (
-            <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#00418F', color: 'white' }} />
-          )}
-          {!isPageVisible && statusFluxo === 'rastreando' && (
-            <Chip label="App em segundo plano" size="small" sx={{ fontWeight: 'bold', bgcolor: '#FF8A31', color: 'white' }} />
-          )}
-        </Stack>
-
-        {!modoApenasConsulta && (
-          <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'green' }} />
-              <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>INÍCIO</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'red' }} />
-              <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#666' }}>FIM</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 16, height: 3, borderTop: '3px dashed #999' }} />
-              <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#999' }}>estimada</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 16, height: 3, bgcolor: '#999' }} />
-              <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#999' }}>real</Typography>
-            </Box>
-          </Stack>
-        )}
-      </Paper>
-      
-      {/* MAPA */}
-      <Box sx={{ flexGrow: 1, position: 'relative', width: '100%' }}>
-        <IconButton onClick={voltar} sx={{ position: 'absolute', top: 16, left: 16, zIndex: 1100, bgcolor: 'white', boxShadow: 2 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        
-        <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%', zIndex: 1 }}>
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+      {/* MAPA AO FUNDO */}
+      <div className="map-container-full">
+        <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
           {renderGradiente()}
           
           {posicaoOnibus && viagemAtiva && !modoApenasConsulta && (
-            <Marker 
-              position={[posicaoOnibus.lat, posicaoOnibus.lng]} 
-              icon={iconOnibus}
-            >
-              <Popup>
-                <Typography variant="body2" fontWeight="bold">
-                  🚌 Ônibus em movimento
-                  {viagemAtiva.velocidade !== undefined && (
-                    <Typography variant="caption" display="block" color="textSecondary">
-                      {viagemAtiva.velocidade} km/h
-                    </Typography>
-                  )}
-                </Typography>
-              </Popup>
-            </Marker>
+            <Marker position={[posicaoOnibus.lat, posicaoOnibus.lng]} icon={iconOnibus} />
           )}
           
           {paradasTrecho.map((id, i) => {
             if (id.startsWith('int_')) return null;
             const c = getCoords(id);
             if (!c) return null;
+            
+            let icon = iconIntermediario;
+            const idLower = id.toLowerCase().trim();
+            if (idLower === origem?.toLowerCase().trim()) {
+              icon = iconEmbarque;
+            } else if (idLower === destino?.toLowerCase().trim()) {
+              icon = iconDestino;
+            }
+            
             return (
-              <Marker 
-                key={i} 
-                position={c} 
-                icon={id === origem?.toLowerCase().trim() ? iconEmbarque : iconIntermediario}
-              >
-                <Popup><Typography variant="body2" fontWeight="bold">{traduzirSigla(id)}</Typography></Popup>
+              <Marker key={i} position={c} icon={icon}>
+                <Popup><Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>{traduzirSigla(id)}</Typography></Popup>
               </Marker>
             );
           })}
         </MapContainer>
+      </div>
+
+      {/* BOTÃO FECHAR/VOLTAR (X) */}
+      <button className="map-top-close-btn" onClick={voltar}>
+        X
+      </button>
+
+      {/* BADGE SUPERIOR - Visto por Último */}
+      {!modoApenasConsulta && viagemAtiva && (
+        <div className="map-top-badge-container">
+          <div className="map-top-badge">
+            <span className="map-badge-title">Visto por Último em:</span>
+            <span className="map-badge-value">{traduzirSigla(viagemAtiva.ultimaParada)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* CONTAINER INFERIOR (Ações e Informações) */}
+      <div className="map-bottom-wrapper">
         
-        {/* BOTÕES DE AÇÃO */}
-<Box sx={{ position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, width: '90%', maxWidth: '400px', pointerEvents: 'none' }}>
-  <Box sx={{ pointerEvents: 'auto' }}>
-    
-    {!modoApenasConsulta && statusFluxo === 'inicial' && (
-      <Box sx={{ width: '100%' }}>
-        {/* Barra de progresso do embarque automático - só mostra se estiver "proximo" e parado */}
-        {embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' && velocidadeAuto < 1 && tempoRestante && (
-          <Paper elevation={3} sx={{ mb: 1.5, p: 1.5, borderRadius: '16px', bgcolor: '#f0f7ff' }}>
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CircularProgress size={16} sx={{ color: '#0EA503' }} />
-                  <Typography variant="caption" color="secondary" fontWeight="bold">
-                    Embarque em {Math.ceil(tempoRestante / 1000)}s...
-                  </Typography>
-                </Box>
-                <Typography variant="caption" fontWeight="bold" sx={{ color: '#00418F' }}>
-                  {velocidadeAuto.toFixed(1)} km/h
-                </Typography>
-              </Stack>
-              <LinearProgress 
-                variant="determinate" 
-                value={Math.min(progressoEmbarque, 100)} 
-                sx={{ 
-                  height: 6, 
-                  borderRadius: 3, 
-                  bgcolor: '#e0e0e0', 
-                  '& .MuiLinearProgress-bar': { bgcolor: '#0EA503' } 
-                }} 
-              />
-            </Stack>
-          </Paper>
-        )}
-        
-        <Button 
-          variant="contained" 
-          disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50} 
-          onClick={async () => { 
-            if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); 
-            await handleConfirmarEmbarque(); 
-          }} 
-          sx={{ borderRadius: '50px', bgcolor: '#C4151C', color: 'white', width: '100%', height: '60px', fontWeight: 'bold', boxShadow: 3 }}
-        >
-          {embarcando 
-            ? 'Processando...' 
-            : ((distanciaAteParada || distanciaAuto || 999) > 50 
-                ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)` 
-                : (embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' 
-                    ? `Aguardando (${Math.ceil(tempoRestante / 1000)}s)...` 
-                    : 'Confirmar Embarque Manual'))}
-        </Button>
-        
-        {statusEmbarqueAuto !== 'confirmado' && (
-          <Button size="small" onClick={() => setEmbarqueAutomaticoAtivo(!embarqueAutomaticoAtivo)} sx={{ mt: 1, textTransform: 'none', color: '#00418F', width: '100%' }}>
-            {embarqueAutomaticoAtivo ? 'Usar embarque manual' : 'Reativar embarque automático'}
-          </Button>
-        )}
-      </Box>
-    )}
-            
-            {statusFluxo === 'votando' && (
-              <Paper elevation={4} sx={{ p: 2, borderRadius: '15px', textAlign: 'center' }}>
-                <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5 }}>Lotação do Ônibus:</Typography>
-                <Stack direction="row" spacing={1} justifyContent="center">
-                  <Button size="small" variant="contained" sx={{ bgcolor: '#0EA503' }} onClick={() => handleVotarLotacao('vazio')}>Vazio</Button>
-                  <Button size="small" variant="contained" sx={{ bgcolor: '#FF8A31' }} onClick={() => handleVotarLotacao('medio')}>Médio</Button>
-                  <Button size="small" variant="contained" sx={{ bgcolor: '#C4151C' }} onClick={() => handleVotarLotacao('lotado')}>Cheio</Button>
-                </Stack>
-              </Paper>
+        {/* ÁREA DE AÇÕES */}
+        <div className="map-actions-area">
+          
+          {/* Estado de Expulsão (Conclusão) */}
+          {statusFluxo === 'expulso' && (
+            <div className="expulsao-alert">
+              Você foi liberado do ônibus!
+            </div>
+          )}
+
+          {/* Estado de Votação de Lotação */}
+          {statusFluxo === 'votando' && (
+            <div className="lotacao-card">
+              <Typography className="lotacao-title">Como está a lotação do ônibus?</Typography>
+              <button className="btn-lotacao vazio" onClick={() => handleVotarLotacao('vazio')}>Vazio</button>
+              <button className="btn-lotacao medio" onClick={() => handleVotarLotacao('medio')}>Médio</button>
+              <button className="btn-lotacao lotado" onClick={() => handleVotarLotacao('lotado')}>Lotado</button>
+            </div>
+          )}
+
+          {/* Badges de Status */}
+          <div className="dark-status-chips">
+            {infoLotacao && statusFluxo !== 'votando' && (
+              <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />
             )}
-            
-            {statusFluxo === 'rastreando' && (
-              <Paper elevation={2} sx={{ p: 1.5, borderRadius: '15px', textAlign: 'center', bgcolor: 'rgba(255,255,255,0.92)' }}>
-                <Typography variant="caption" color="textSecondary">
-                  {isRastreador ? 'Você está contribuindo com a rota em tempo real' : gpsPassageiroAtivo ? 'GPS ativado para desembarque' : 'Acompanhando o ônibus...'}
-                </Typography>
-              </Paper>
+            {statusFluxo === 'rastreando' && isRastreador && (
+              <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#1E58FF', color: 'white' }} />
             )}
-          </Box>
-        </Box>
-      </Box>
+          </div>
+
+          {/* Botão de Embarque Inicial */}
+          {!modoApenasConsulta && statusFluxo === 'inicial' && (
+            <Box sx={{ width: '100%' }}>
+              {embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' && velocidadeAuto < 1 && tempoRestante && (
+                <Paper elevation={3} sx={{ mb: 1.5, p: 1.5, borderRadius: '16px', bgcolor: '#2a2a2a' }}>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold' }}>
+                        Embarque em {Math.ceil(tempoRestante / 1000)}s...
+                      </Typography>
+                    </Stack>
+                    <LinearProgress variant="determinate" value={Math.min(progressoEmbarque, 100)} sx={{ height: 6, borderRadius: 3, bgcolor: '#4A4A4A', '& .MuiLinearProgress-bar': { bgcolor: '#0EA503' } }} />
+                  </Stack>
+                </Paper>
+              )}
+              
+        {/* BOTÃO DISTANCIA PARADA METROS */}
+              <Button 
+                variant="contained" 
+                className="dark-action-btn"
+                disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50} 
+                onClick={async () => { if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); await handleConfirmarEmbarque(); }} 
+                sx={{ width: '100%' }}
+              >
+                {embarcando ? 'Processando...' : ((distanciaAteParada || distanciaAuto || 999) > 50 ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)` : (embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' ? `Aguardando (${Math.ceil(tempoRestante / 1000)}s)...` : 'Confirmar Embarque'))}
+              </Button>
+            </Box>
+          )}
+        </div>
+
+        {/* BLOCO DE INFORMAÇÕES INFERIOR COM LEGENDA */}
+        <div className="map-info-card">
+          <div className="map-info-row">
+            <div className="map-info-left">
+              <span className="map-info-title">{categoria || destino || "Rota"}</span>
+              <span className="map-info-subtitle">Estimativa: {estimativaTexto}</span>
+            </div>
+            <div className="map-info-right">
+              {horario}
+            </div>
+          </div>
+          
+          {/* Legenda do Gradiente */}
+          <div className="map-legend">
+            <div className="map-legend-item">
+              <div className="map-legend-color" style={{ backgroundColor: '#FF0000' }}></div>
+              <span className="map-legend-label">Início</span>
+            </div>
+            <span className="map-legend-divider">→</span>
+            <div className="map-legend-item">
+              <div className="map-legend-color" style={{ 
+                background: 'linear-gradient(to right, #FF0000, #00FF00)',
+                width: '30px',
+                height: '4px',
+                borderRadius: '2px'
+              }}></div>
+              <span className="map-legend-label">Rota</span>
+            </div>
+            <span className="map-legend-divider">→</span>
+            <div className="map-legend-item">
+              <div className="map-legend-color" style={{ backgroundColor: '#00FF00' }}></div>
+              <span className="map-legend-label">Destino</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
       
-      <Snackbar open={!!alertaMsg} autoHideDuration={4000} onClose={handleCloseAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+      {/* SNACKBAR DE ALERTAS */}
+      <Snackbar open={!!alertaMsg} autoHideDuration={4000} onClose={handleCloseAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }} sx={{ mt: 10 }}>
         <Alert onClose={handleCloseAlert} severity={alertaMsg?.severidade || 'info'} sx={{ width: '100%', fontWeight: 'bold' }}>
           {alertaMsg?.texto}
         </Alert>
       </Snackbar>
-    </Box>
+    </div>
   );
 }

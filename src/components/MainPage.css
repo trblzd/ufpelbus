@@ -1,0 +1,412 @@
+/* Container Principal */
+.mainpage-wrapper {
+  height: 100dvh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background-color: #1A1A1A;
+}
+
+/* O mapa deve ocupar todo o espaço ao fundo */
+.map-container-full {
+  flex-grow: 1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.leaflet-container {
+  background-color: #45516E !important;
+}
+
+/* Ajuste para o mapa */
+.leaflet-tile-pane {
+  opacity: 0.6;
+  mix-blend-mode: multiply;
+}
+
+/* Filtros para as imagens dos tiles */
+.leaflet-tile-pane img {
+  filter: brightness(2.3) saturate(0.5) contrast(1.4);
+}
+
+/* ================= TOP UI ================= */
+
+/* Botão Fechar/Voltar flutuante no canto superior esquerdo */
+.map-top-close-btn {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  z-index: 1100;
+  background-color: #2a2a2a;
+  color: #8E8E93;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  transition: opacity 0.2s;
+}
+.map-top-close-btn:hover {
+  opacity: 0.8;
+}
+
+/* Badge Azul Superior (Visto por Último) */
+.map-top-badge-container {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  display: flex;
+  justify-content: center;
+}
+
+.map-top-badge {
+  background-color: #1E58FF;
+  color: #FFFFFF;
+  padding: 8px 20px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 4px 15px rgba(30, 88, 255, 0.4);
+}
+
+.map-badge-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.map-badge-value {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ================= BOTTOM UI ================= */
+
+/* Container geral inferior que agrupa Ações e Informações */
+.map-bottom-wrapper {
+  position: absolute;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  width: 90%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: none;
+}
+
+/* Área para os botões de ação (Embarque, Votação) */
+.map-actions-area {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Bloco escuro de informações inspirado na referência */
+.map-info-card {
+  pointer-events: auto;
+  background-color: #2A2A2A;
+  border-radius: 20px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
+
+.map-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.map-info-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.map-info-title {
+  color: #FFFFFF;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 2px;
+}
+
+.map-info-subtitle {
+  color: #A1A1AA;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.map-info-right {
+  color: #E0E0E0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* Legenda de cores do gradiente */
+.map-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid #3A3A3A;
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-legend-color {
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.map-legend-label {
+  color: #A1A1AA;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.map-legend-divider {
+  color: #3A3A3A;
+  font-size: 11px;
+}
+
+/* Reestilização local para se alinhar ao tema escuro */
+.dark-action-btn {
+  background-color: #1E58FF !important;
+  color: white !important;
+  border-radius: 20px !important;
+  height: 56px;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+}
+
+.dark-action-btn:disabled {
+  background-color: #4A4A4A !important;
+  color: #8C8C8C !important;
+}
+
+.dark-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+/* ================= NOVOS ESTILOS ADICIONADOS ================= */
+
+/* --- Lotação Card --- */
+.lotacao-card {
+  background-color: #1A1A1A;
+  padding: 20px;
+  border-radius: 20px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.lotacao-title {
+  color: #FFFFFF;
+  margin-bottom: 16px !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+}
+
+.btn-lotacao {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-lotacao:active { 
+  opacity: 0.8; 
+}
+
+.btn-lotacao:last-child {
+  margin-bottom: 0;
+}
+
+.btn-lotacao.vazio { 
+  background-color: #0EA503; 
+}
+
+.btn-lotacao.medio { 
+  background-color: #E67E22; 
+}
+
+.btn-lotacao.lotado { 
+  background-color: #E74C3C; 
+}
+
+/* --- Expulsão Banner --- */
+.expulsao-alert {
+  background-color: #E74C3C;
+  color: white;
+  padding: 16px;
+  border-radius: 50px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 18px;
+  box-shadow: 0 4px 10px rgba(231, 76, 60, 0.4);
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* ================= RESPONSIVIDADE ================= */
+
+/* Ajustes para dispositivos móveis */
+@media (max-width: 480px) {
+  .map-bottom-wrapper {
+    width: 92%;
+    gap: 12px;
+  }
+  
+  .map-info-card {
+    padding: 14px 16px;
+  }
+  
+  .map-info-title {
+    font-size: 18px;
+  }
+  
+  .map-info-right {
+    font-size: 18px;
+  }
+  
+  .map-top-badge {
+    padding: 6px 16px;
+  }
+  
+  .map-badge-value {
+    font-size: 12px;
+  }
+  
+  .dark-action-btn {
+    height: 48px;
+    font-size: 15px !important;
+  }
+  
+  .btn-lotacao {
+    padding: 14px;
+    font-size: 15px;
+  }
+  
+  .lotacao-card {
+    padding: 16px;
+  }
+  
+  .lotacao-title {
+    font-size: 16px !important;
+  }
+  
+  .expulsao-alert {
+    font-size: 16px;
+    padding: 14px;
+  }
+}
+
+/* Ajustes para telas muito pequenas */
+@media (max-width: 380px) {
+  .map-bottom-wrapper {
+    width: 95%;
+    gap: 10px;
+  }
+  
+  .map-info-card {
+    padding: 12px 14px;
+  }
+  
+  .map-info-title {
+    font-size: 16px;
+  }
+  
+  .map-info-right {
+    font-size: 16px;
+  }
+  
+  .map-info-subtitle {
+    font-size: 12px;
+  }
+  
+  .dark-action-btn {
+    height: 44px;
+    font-size: 14px !important;
+  }
+  
+  .btn-lotacao {
+    padding: 12px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+  
+  .lotacao-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+  
+  .lotacao-title {
+    font-size: 15px !important;
+  }
+  
+  .expulsao-alert {
+    font-size: 14px;
+    padding: 12px;
+    border-radius: 40px;
+  }
+  
+  .map-legend {
+    gap: 8px;
+  }
+  
+  .map-legend-label {
+    font-size: 10px;
+  }
+}
+
+/* Suporte para notched phones (iPhone X, etc) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .map-bottom-wrapper {
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
+  
+  .map-top-close-btn {
+    top: max(16px, env(safe-area-inset-top));
+  }
+  
+  .map-top-badge-container {
+    top: max(16px, env(safe-area-inset-top));
+  }
+}
