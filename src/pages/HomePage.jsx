@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
-import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useLocation } from '../hooks/useLocation';
 import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import {
-  calcularHorarioEstimadoParada,
-  calcularTempoParaOnibusChegarAteVoce,
-  calcularHorarioChegadaOnibusAteVoce
+  calcularTempoParaOnibusChegarAteVoce
 } from '../services/transporteService';
 import {
   Box, Tabs, Tab, Paper, Typography, Button,
@@ -22,7 +20,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import StarIcon from '@mui/icons-material/Star';
-import { getAuth, signOut } from 'firebase/auth';
+import CheckIcon from '@mui/icons-material/Check';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useAppData } from '../App';
 import { getFavoritos, toggleFavorito } from '../services/favoritosService';
 import { getAllApelidos, setMultiplosApelidos } from '../services/apelidosService';
@@ -80,8 +79,8 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
         const DocsViagem = { indiceParada: viagemInfo.indiceParada || 0 };
         const resultado = await calcularTempoParaOnibusChegarAteVoce(DocsViagem, opt.it, opt.origem, opt.horario);
         if (resultado) setTempoParaOnibusChegar(resultado);
-      } catch (e) {
-        console.warn("Erro ao buscar tempo estimado:", e);
+      } catch (error) {
+        console.warn("Erro ao buscar tempo estimado:", error);
       } finally {
         setCarregandoTempo(false);
       }
@@ -142,10 +141,14 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
 const ModalRenomear = ({ open, onClose, idsParadas }) => {
   const [apelidos, setApelidos] = useState({});
   const [listaOrdenada, setListaOrdenada] = useState([]);
+  const [paradaSelecionada, setParadaSelecionada] = useState(null);
+  const [modoSelecao, setModoSelecao] = useState('lista');
 
   useEffect(() => {
     if (open) {
       setApelidos(getAllApelidos());
+      setParadaSelecionada(null);
+      setModoSelecao('lista');
     }
   }, [open]);
 
@@ -175,65 +178,166 @@ const ModalRenomear = ({ open, onClose, idsParadas }) => {
     return [traduzirSigla(sigla), sigla.toUpperCase(), sigla.toLowerCase()];
   };
 
+  const handleSelecionarParada = (id) => {
+    setParadaSelecionada(id);
+    setModoSelecao('opcoes');
+  };
+
+  const handleVoltarLista = () => {
+    setModoSelecao('lista');
+    setParadaSelecionada(null);
+  };
+
+  const handleEscolherOpcao = (id, opcao) => {
+    handleMudarApelido(id, opcao);
+    handleVoltarLista();
+  };
+
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '90%',
-        maxWidth: 500,
-        maxHeight: '90vh',
-        bgcolor: '#191919',
-        borderRadius: '16px',
-        boxShadow: 24,
-        p: 3,
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
+        maxHeight: '80vh',
         display: 'flex',
         flexDirection: 'column',
-        outline: 'none',
-        color: 'white'
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
       }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" fontWeight="bold">Renomear Paradas</Typography>
-          <IconButton onClick={onClose} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          mb: 2,
+          gap: 1
+        }}>
+          {modoSelecao === 'opcoes' && (
+            <IconButton 
+              onClick={handleVoltarLista}
+              sx={{ 
+                color: '#7C7C7C',
+                padding: '4px',
+                '&:hover': { color: '#FFFFFF' }
+              }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+          )}
+          <Typography sx={{ 
+            color: '#FFFFFF', 
+            fontSize: '20px', 
+            fontWeight: 700
+          }}>
+            {modoSelecao === 'lista' ? 'Como você deseja renomear?' : `Renomear ${paradaSelecionada?.toUpperCase()}`}
+          </Typography>
         </Box>
         
-        <Box sx={{ flexGrow: 1, overflowY: 'auto', mb: 2 }}>
-          {listaOrdenada.map(id => {
-            const apelidoAtual = apelidos[id] || traduzirSigla(id);
-            const opcoes = getOpcoesRenomear(id);
-            return (
-              <Box key={id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, borderBottom: '1px solid #333' }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 80 }}>{id.toUpperCase()}</Typography>
-                <Select
-                  size="small"
-                  value={apelidos[id] || traduzirSigla(id)}
-                  onChange={(e) => handleMudarApelido(id, e.target.value)}
-                  sx={{
-                    width: 180,
-                    fontSize: '0.8rem',
-                    borderRadius: '8px',
-                    color: 'white',
-                    '& .MuiSelect-icon': { color: 'white' },
-                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#444' },
-                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#666' }
-                  }}
-                >
-                  {opcoes.map(opt => (
-                    <MenuItem key={opt} value={opt}>{opt}</MenuItem>
-                  ))}
-                </Select>
+        <Box sx={{ 
+          flex: 1,
+          overflowY: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#3A3A3A',
+            borderRadius: '4px',
+          }
+        }}>
+          {modoSelecao === 'lista' ? (
+            listaOrdenada.map((id) => (
+              <Box 
+                key={id} 
+                onClick={() => handleSelecionarParada(id)}
+                sx={{ 
+                  backgroundColor: '#2A2A2A',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  border: '1px solid transparent',
+                  '&:hover': {
+                    borderColor: '#3A3A3A',
+                    backgroundColor: '#353535',
+                  }
+                }}
+              >
+                <Typography sx={{ 
+                  color: '#E0E0E0', 
+                  fontSize: '16px', 
+                  fontWeight: 500
+                }}>
+                  {traduzirSigla(id)}
+                </Typography>
+                <Typography sx={{ 
+                  color: '#7C7C7C', 
+                  fontSize: '14px'
+                }}>
+                  {apelidos[id] || traduzirSigla(id)}
+                </Typography>
               </Box>
-            );
-          })}
+            ))
+          ) : (
+            paradaSelecionada && getOpcoesRenomear(paradaSelecionada).map((opcao) => (
+              <Box 
+                key={opcao} 
+                onClick={() => handleEscolherOpcao(paradaSelecionada, opcao)}
+                sx={{ 
+                  backgroundColor: apelidos[paradaSelecionada] === opcao ? '#0845FF' : '#2A2A2A',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  border: '1px solid transparent',
+                  '&:hover': {
+                    borderColor: '#3A3A3A',
+                    backgroundColor: apelidos[paradaSelecionada] === opcao ? '#0037CC' : '#353535',
+                  }
+                }}
+              >
+                <Typography sx={{ 
+                  color: apelidos[paradaSelecionada] === opcao ? '#FFFFFF' : '#E0E0E0', 
+                  fontSize: '16px', 
+                  fontWeight: apelidos[paradaSelecionada] === opcao ? 600 : 500
+                }}>
+                  {opcao}
+                </Typography>
+                {apelidos[paradaSelecionada] === opcao && (
+                  <CheckIcon sx={{ color: '#FFFFFF', fontSize: '22px' }} />
+                )}
+              </Box>
+            ))
+          )}
         </Box>
         
-        <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSalvar} fullWidth sx={{ py: 1.5, borderRadius: '12px', fontWeight: 'bold' }}>
-          SALVAR ALTERAÇÕES
-        </Button>
+        {modoSelecao === 'lista' && (
+          <Button 
+            className="modal-save-btn" 
+            startIcon={<SaveIcon />} 
+            onClick={handleSalvar}
+            sx={{ 
+              mt: 2,
+              flexShrink: 0
+            }}
+          >
+            SALVAR ALTERAÇÕES
+          </Button>
+        )}
       </Box>
     </Modal>
   );
@@ -277,60 +381,93 @@ const ModalFavoritos = ({ open, onClose, idsParadas }) => {
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '90%',
-        maxWidth: 500,
-        maxHeight: '90vh',
-        bgcolor: '#191919',
-        borderRadius: '16px',
-        boxShadow: 24,
-        p: 3,
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
+        maxHeight: '80vh',
         display: 'flex',
         flexDirection: 'column',
-        outline: 'none',
-        color: 'white'
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
       }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" fontWeight="bold">Paradas Favoritas</Typography>
-          <IconButton onClick={onClose} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
+        <Typography sx={{ 
+          color: '#FFFFFF', 
+          fontSize: '20px', 
+          fontWeight: 700,
+          mb: 2
+        }}>
+          Paradas Favoritas
+        </Typography>
         
-        <Box sx={{ flexGrow: 1, overflowY: 'auto', mb: 2 }}>
+        <Box sx={{ 
+          flex: 1,
+          overflowY: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#3A3A3A',
+            borderRadius: '4px',
+          }
+        }}>
           {listaOrdenada.map(id => {
             const isFav = favoritos.includes(id);
             return (
-              <ListItem 
+              <Box 
                 key={id} 
                 onClick={() => handleToggle(id)}
-                sx={{
-                  py: 1.5,
-                  borderRadius: '8px',
-                  mb: 0.5,
+                sx={{ 
+                  backgroundColor: isFav ? '#0845FF' : '#2A2A2A',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   cursor: 'pointer',
-                  backgroundColor: isFav ? '#0845FF' : 'transparent',
-                  color: isFav ? 'white' : 'inherit',
+                  transition: 'all 0.2s ease',
+                  border: '1px solid transparent',
                   '&:hover': {
-                    backgroundColor: isFav ? '#0037CC' : '#333'
+                    borderColor: isFav ? '#0037CC' : '#3A3A3A',
+                    backgroundColor: isFav ? '#0037CC' : '#353535',
                   }
                 }}
               >
-                <Typography variant="body2" fontWeight={isFav ? 'bold' : 'normal'}>
+                <Typography sx={{ 
+                  color: isFav ? '#FFFFFF' : '#E0E0E0', 
+                  fontSize: '16px', 
+                  fontWeight: isFav ? 600 : 500
+                }}>
                   {traduzirSigla(id)}
                 </Typography>
-                <Typography variant="caption" sx={{ ml: 1, color: isFav ? '#CCC' : '#666' }}>
-                  {id.toUpperCase()}
-                </Typography>
-              </ListItem>
+                {isFav && (
+                  <CheckIcon sx={{ 
+                    color: '#FFFFFF', 
+                    fontSize: '22px' 
+                  }} />
+                )}
+              </Box>
             );
           })}
         </Box>
         
-        <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSalvar} fullWidth sx={{ py: 1.5, borderRadius: '12px', fontWeight: 'bold' }}>
+        <Button 
+          className="modal-save-btn" 
+          startIcon={<SaveIcon />} 
+          onClick={handleSalvar}
+          sx={{ 
+            mt: 2,
+            flexShrink: 0
+          }}
+        >
           SALVAR ALTERAÇÕES
         </Button>
       </Box>
@@ -350,30 +487,43 @@ const ModalCardapio = ({ open, onClose }) => {
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '90%',
-        maxWidth: 400,
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
         maxHeight: '80vh',
-        bgcolor: '#191919',
-        borderRadius: '16px',
-        boxShadow: 24,
-        p: 3,
         display: 'flex',
         flexDirection: 'column',
-        outline: 'none',
-        color: 'white'
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
       }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" fontWeight="bold">Cardápio do Dia</Typography>
-          <IconButton onClick={onClose} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
+        <Typography sx={{ 
+          color: '#FFFFFF', 
+          fontSize: '20px', 
+          fontWeight: 700,
+          mb: 2
+        }}>
+          Cardápio do Dia
+        </Typography>
         
-        <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+        <Box sx={{ 
+          flex: 1,
+          overflowY: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#3A3A3A',
+            borderRadius: '4px',
+          }
+        }}>
           {itensCardapio.map((grupo, idx) => (
             <Box key={idx} sx={{ mb: 2 }}>
               <Typography variant="subtitle2" sx={{ color: '#0845FF', fontWeight: 'bold', mb: 0.5 }}>
@@ -389,7 +539,14 @@ const ModalCardapio = ({ open, onClose }) => {
           ))}
         </Box>
         
-        <Button variant="contained" onClick={onClose} fullWidth sx={{ py: 1.5, borderRadius: '12px', fontWeight: 'bold', mt: 2 }}>
+        <Button 
+          className="modal-save-btn" 
+          onClick={onClose}
+          sx={{ 
+            mt: 2,
+            flexShrink: 0
+          }}
+        >
           FECHAR
         </Button>
       </Box>
@@ -398,7 +555,7 @@ const ModalCardapio = ({ open, onClose }) => {
 };
 
 // ==================== COMPONENTE MODAL UPLOAD CARTEIRINHA ====================
-const ModalUploadCarteirinha = ({ open, onClose }) => {
+const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
   const [preview, setPreview] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -419,6 +576,7 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
         const base64 = reader.result;
         setPreview(base64);
         localStorage.setItem('carteirinha', base64);
+        if (onSave) onSave(base64);
       };
       reader.readAsDataURL(file);
     }
@@ -427,6 +585,7 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
   const handleRemover = () => {
     setPreview(null);
     localStorage.removeItem('carteirinha');
+    if (onSave) onSave(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -436,38 +595,36 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
     onClose();
   };
 
-  const containerWidth = Math.min(362, window.innerWidth * 0.8);
-  const containerHeight = containerWidth * (228 / 362);
-
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '90%',
-        maxWidth: 420,
-        bgcolor: '#191919',
-        borderRadius: '16px',
-        boxShadow: 24,
-        p: 3,
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
+        maxHeight: '80vh',
         display: 'flex',
         flexDirection: 'column',
-        outline: 'none',
-        color: 'white'
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
       }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" fontWeight="bold">Carteirinha do Cobalto</Typography>
-          <IconButton onClick={onClose} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
+        <Typography sx={{ 
+          color: '#FFFFFF', 
+          fontSize: '20px', 
+          fontWeight: 700,
+          mb: 2
+        }}>
+          Carteirinha do Cobalto
+        </Typography>
         
         <Box 
           sx={{
             width: '100%',
-            height: containerHeight,
+            minHeight: '150px',
+            maxHeight: '300px',
             borderRadius: '12px',
             border: '2px dashed #444',
             display: 'flex',
@@ -478,16 +635,25 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
             position: 'relative',
             overflow: 'hidden',
             mb: 2,
-            backgroundColor: '#222'
+            backgroundColor: '#222',
+            flexShrink: 0
           }}
           onClick={() => fileInputRef.current?.click()}
         >
           {preview ? (
-            <img src={preview} alt="Carteirinha" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            <img 
+              src={preview} 
+              alt="Carteirinha" 
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'contain'
+              }} 
+            />
           ) : (
             <>
               <CloudUploadIcon sx={{ fontSize: 48, color: '#555' }} />
-              <Typography variant="body2" sx={{ color: '#777', mt: 1 }}>
+              <Typography variant="body2" sx={{ color: '#777', mt: 1, textAlign: 'center' }}>
                 Clique para enviar sua carteirinha
               </Typography>
             </>
@@ -502,12 +668,29 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
         </Box>
         
         {preview && (
-          <Button variant="outlined" color="error" onClick={handleRemover} fullWidth sx={{ mb: 2, borderRadius: '12px' }}>
+          <Button 
+            variant="outlined" 
+            color="error" 
+            onClick={handleRemover} 
+            fullWidth 
+            sx={{ 
+              mb: 2, 
+              borderRadius: '12px',
+              flexShrink: 0
+            }}
+          >
             Remover imagem
           </Button>
         )}
         
-        <Button variant="contained" onClick={handleSalvar} fullWidth sx={{ py: 1.5, borderRadius: '12px', fontWeight: 'bold' }}>
+        <Button 
+          className="modal-save-btn" 
+          onClick={handleSalvar}
+          sx={{ 
+            mt: 'auto',
+            flexShrink: 0
+          }}
+        >
           SALVAR
         </Button>
       </Box>
@@ -515,8 +698,99 @@ const ModalUploadCarteirinha = ({ open, onClose }) => {
   );
 };
 
+// ==================== MODAL DE PARADAS ====================
+const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
+  return (
+    <Modal open={open} onClose={onClose}>
+      <Box sx={{
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
+      }}>
+        <Typography sx={{ 
+          color: '#FFFFFF', 
+          fontSize: '20px', 
+          fontWeight: 700,
+          mb: 2
+        }}>
+          Paradas
+        </Typography>
+        
+        <Box sx={{ 
+          flex: 1,
+          overflowY: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#3A3A3A',
+            borderRadius: '4px',
+          }
+        }}>
+          {paradasComEndereco.length === 0 ? (
+            <Typography sx={{ color: '#7C7C7C', textAlign: 'center', py: 4 }}>
+              Nenhuma parada encontrada.
+            </Typography>
+          ) : (
+            paradasComEndereco.map((item, index) => (
+              <Box 
+                key={index} 
+                sx={{ 
+                  py: 1.5,
+                  borderBottom: index < paradasComEndereco.length - 1 ? '1px solid #2A2A2A' : 'none'
+                }}
+              >
+                <Typography sx={{ 
+                  fontSize: '16px', 
+                  fontWeight: 600, 
+                  color: '#FFFFFF',
+                  mb: 0.5
+                }}>
+                  {traduzirSigla(item.id)}
+                </Typography>
+                <Typography sx={{ 
+                  fontSize: '13px', 
+                  fontWeight: 400, 
+                  color: '#7C7C7C',
+                  lineHeight: 1.4
+                }}>
+                  {item.endereco || 'Endereço não disponível'}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </Box>
+        
+        <Button 
+          className="modal-save-btn" 
+          onClick={onClose}
+          sx={{ 
+            mt: 2,
+            flexShrink: 0
+          }}
+        >
+          FECHAR
+        </Button>
+      </Box>
+    </Modal>
+  );
+};
+
 // ==================== COMPONENTE PRINCIPAL ====================
-export default function HomePage({ onLogout }) {
+export default function HomePage() {
   const navigate = useNavigate();
   const { todosItinerarios, paradasCoordenadas, idsParadasUnicas, favoritos, loading: appLoading } = useAppData();
   
@@ -529,23 +803,51 @@ export default function HomePage({ onLogout }) {
   const [destinoId, setDestinoId] = useState('');
   const [opcoesEncontradas, setOpcoesEncontradas] = useState([]);
   const [buscando, setBuscando] = useState(false);
+  const [paradasDataCompleta, setParadasDataCompleta] = useState({});
+  const [carteirinhaPreview, setCarteirinhaPreview] = useState(null);
   
   const [modalRenomearOpen, setModalRenomearOpen] = useState(false);
   const [modalFavoritosOpen, setModalFavoritosOpen] = useState(false);
   const [modalCardapioOpen, setModalCardapioOpen] = useState(false);
   const [modalUploadOpen, setModalUploadOpen] = useState(false);
+  const [modalParadasOpen, setModalParadasOpen] = useState(false);
   
   const cacheViagensRef = useRef({});
-  const auth = getAuth();
 
-  const categoriesConfig = {
+  const categoriesConfig = useMemo(() => ({
     Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
     Capão: ['anglocapao', 'capaoanglo', 'capaodireito', 'capaodireitobr', 'capaofamedanglo', 'capaolyceu', 'cotadacapao', 'direitocapao', 'famedcapao', 'lyceucapao'],
     ESEF: ['madeireira11', 'madeireira13', 'madeireira15', 'madeireira16', 'madeireira1820', 'madeireira20', 'madeireira21', 'madeireira7', 'madeireira9'],
     FaMed: ['madeireira11', 'madeireira13', 'madeireira15', 'madeireira16', 'madeireira18', 'madeireira1820', 'madeireira20', 'madeireira21', 'madeireira22', 'madeireira7', 'madeireira9', 'anglofamed', 'anglocapao', 'capaofamedanglo', 'cotadacapao', 'direitocapao', 'lyceucapao'],
     Madeireira: ['anglru', 'anglo21', 'madeireira7', 'madeireira9', 'madeireira11', 'madeireira15', 'madeireira16'],
     Palma: ['palmacp', 'palmapm']
-  };
+  }), []);
+
+  // Carregar carteirinha salva
+  useEffect(() => {
+    const saved = localStorage.getItem('carteirinha');
+    if (saved) {
+      setCarteirinhaPreview(saved);
+    }
+  }, []);
+
+  // Buscar dados completos das paradas do Firebase
+  useEffect(() => {
+    const buscarParadasCompletas = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "paradas"));
+        const dados = {};
+        querySnapshot.forEach((doc) => {
+          const id = doc.id.toLowerCase().trim();
+          dados[id] = doc.data();
+        });
+        setParadasDataCompleta(dados);
+      } catch (error) {
+        console.error("Erro ao buscar paradas:", error);
+      }
+    };
+    buscarParadasCompletas();
+  }, []);
 
   const safeTraduzir = (valor) => {
     if (!valor) return "---";
@@ -638,7 +940,36 @@ export default function HomePage({ onLogout }) {
         .sort((a, b) => (a.horarios[0]?.h || "99:99").localeCompare(b.horarios[0]?.h || "99:99"));
     };
     return { gruposNormal: ordenar(gruposNormal), gruposRU: ordenar(gruposRU) };
-  }, [tabLinha, todosItinerarios]);
+  }, [tabLinha, todosItinerarios, categoriesConfig, safeTraduzir, normalizarNome]);
+
+  // Buscar endereços das paradas
+  const paradasComEndereco = useMemo(() => {
+    const paradasUnicas = new Set();
+    const resultado = [];
+    
+    idsParadasUnicas.forEach(id => {
+      if (!id || typeof id !== 'string') return;
+      if (PARADAS_IGNORADAS.some(p => id.startsWith(p) || id === p)) return;
+      
+      const idLower = id.toLowerCase().trim();
+      paradasUnicas.add(idLower);
+    });
+    
+    paradasUnicas.forEach(id => {
+      let endereco = null;
+      
+      if (paradasDataCompleta && paradasDataCompleta[id]) {
+        endereco = paradasDataCompleta[id].endereco || null;
+      }
+      
+      resultado.push({
+        id: id,
+        endereco: endereco
+      });
+    });
+    
+    return resultado.sort((a, b) => traduzirSigla(a.id).localeCompare(traduzirSigla(b.id)));
+  }, [idsParadasUnicas, paradasDataCompleta]);
 
   const handleBusca = useCallback(async () => {
     if (!origemId || !destinoId) return;
@@ -719,7 +1050,7 @@ export default function HomePage({ onLogout }) {
             if (snap.exists()) indice = snap.data().indiceParada ?? 0;
             cacheViagensRef.current.viagens[match.tripId] = indice;
             return { match, indiceAtualOnibus: indice };
-          } catch (e) {
+          } catch (error) {
             cacheViagensRef.current.viagens[match.tripId] = 0;
             return { match, indiceAtualOnibus: 0 };
           }
@@ -739,7 +1070,7 @@ export default function HomePage({ onLogout }) {
     } finally {
       setBuscando(false);
     }
-  }, [origemId, destinoId, todosItinerarios, buscando]);
+  }, [origemId, destinoId, todosItinerarios, buscando, categoriesConfig, normalizarNome]);
 
   useEffect(() => {
     if (opcoesEncontradas.length === 0) return;
@@ -868,11 +1199,55 @@ export default function HomePage({ onLogout }) {
                   Olá, aluno!
                 </div>
                 
-                <div className="aluno-upload-area" onClick={() => setModalUploadOpen(true)}>
-                  <CloudUploadIcon sx={{ fontSize: 40, color: '#555' }} />
-                  <Typography variant="body2" sx={{ color: '#777', mt: 1 }}>
-                    Faça upload da sua<br/>carteirinha do cobalto aqui!
-                  </Typography>
+                <div 
+                  className="aluno-upload-area" 
+                  onClick={() => setModalUploadOpen(true)}
+                  style={{
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    padding: 0,
+                    maxWidth: '100%',
+                    aspectRatio: 'auto',
+                    height: 'auto',
+                    minHeight: '100px',
+                    maxHeight: '300px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {carteirinhaPreview ? (
+                    <img 
+                      src={carteirinhaPreview} 
+                      alt="Carteirinha" 
+                      style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        objectFit: 'contain',
+                        borderRadius: '12px'
+                      }} 
+                    />
+                  ) : (
+                    <div style={{
+                      width: '100%',
+                      minHeight: '150px',
+                      backgroundColor: '#2A2A2A',
+                      borderRadius: '16px',
+                      border: '2px dashed #444',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '20px',
+                      textAlign: 'center'
+                    }}>
+                      <CloudUploadIcon sx={{ fontSize: 40, color: '#555' }} />
+                      <Typography variant="body2" sx={{ color: '#777', mt: 1 }}>
+                        Faça upload da sua<br/>carteirinha do cobalto aqui!
+                      </Typography>
+                    </div>
+                  )}
                 </div>
 
                 <div className="aluno-buttons-row">
@@ -880,7 +1255,6 @@ export default function HomePage({ onLogout }) {
                     className="aluno-btn" 
                     startIcon={<BookmarkBorderIcon />} 
                     onClick={() => setModalFavoritosOpen(true)}
-                    sx={{ borderRadius: '20px !important' }}
                   >
                     Favoritos
                   </Button>
@@ -888,7 +1262,6 @@ export default function HomePage({ onLogout }) {
                     className="aluno-btn" 
                     startIcon={<RestaurantMenuIcon />} 
                     onClick={() => setModalCardapioOpen(true)}
-                    sx={{ borderRadius: '20px !important' }}
                   >
                     Cardápio RU
                   </Button>
@@ -899,7 +1272,27 @@ export default function HomePage({ onLogout }) {
             {/* MODO VERIFICAR */}
             {modo === 'verificar' && (
               <>
-                <div className="screen-title">Horários</div>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <div className="screen-title" style={{ marginBottom: 0 }}>Horários</div>
+                  <IconButton 
+                    onClick={() => setModalParadasOpen(true)} 
+                    sx={{ 
+                      color: '#7C7C7C',
+                      '&:hover': { color: '#FFFFFF' },
+                      padding: '8px'
+                    }}
+                  >
+                    <img 
+                      src="/paradas.svg" 
+                      alt="Paradas" 
+                      style={{ 
+                        width: '32px', 
+                        height: '32px',
+                        filter: 'brightness(0) saturate(100%) invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(85%)'
+                      }}
+                    />
+                  </IconButton>
+                </Box>
                 
                 <Tabs 
                   value={tabLinha} 
@@ -907,7 +1300,7 @@ export default function HomePage({ onLogout }) {
                   className="custom-tabs" 
                   variant="scrollable" 
                   scrollButtons={false} 
-                  tabindicatorprops={{ style: { display: 'none' } }}
+                  TabIndicatorProps={{ style: { display: 'none' } }}
                 >
                   {Object.keys(categoriesConfig).map(cat => (
                     <Tab key={cat} label={cat} value={cat} className="custom-tab" />
@@ -1014,7 +1407,20 @@ export default function HomePage({ onLogout }) {
       
       <ModalUploadCarteirinha 
         open={modalUploadOpen} 
-        onClose={() => setModalUploadOpen(false)} 
+        onClose={() => {
+          const saved = localStorage.getItem('carteirinha');
+          if (saved) {
+            setCarteirinhaPreview(saved);
+          }
+          setModalUploadOpen(false);
+        }}
+        onSave={(image) => setCarteirinhaPreview(image)}
+      />
+
+      <ModalParadas 
+        open={modalParadasOpen} 
+        onClose={() => setModalParadasOpen(false)} 
+        paradasComEndereco={paradasComEndereco}
       />
     </ThemeProvider>
   );

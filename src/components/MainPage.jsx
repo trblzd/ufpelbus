@@ -9,11 +9,11 @@ import { traduzirSigla } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { useLocation as useGeoLocation } from '../hooks/useLocation';
 import { useRastreamento } from '../hooks/useRastreamento';
-import { 
-  entrarNaViagem, 
+import {
+  entrarNaViagem,
   calcularHorarioChegadaOnibusAteVoce,
   calcularHorarioEstimadoParada,
-  calcularTempoParaOnibusChegarAteVoce, 
+  calcularTempoParaOnibusChegarAteVoce,
   calcularTempoRestanteAteDestino
 } from '../services/transporteService';
 import { usePersistViagem } from '../hooks/usePersistViagem';
@@ -27,25 +27,25 @@ import './MainPage.css';
 
 // ==================== CONSTANTES E CONFIGURAÇÕES ====================
 
-const iconEmbarque = new L.Icon({ 
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', 
-  iconSize: [25, 41], 
-  iconAnchor: [12, 41], 
+const iconEmbarque = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
   popupAnchor: [1, -34]
 });
 
-const iconIntermediario = new L.DivIcon({ 
-  className: 'custom-stop-icon', 
-  html: `<div style="background-color: white; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #154370;"></div>`, 
-  iconSize: [14, 14], 
-  iconAnchor: [7, 7] 
+const iconIntermediario = new L.DivIcon({
+  className: 'custom-stop-icon',
+  html: `<div style="background-color: white; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #154370;"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
 });
 
-const iconDestino = new L.DivIcon({ 
-  className: 'custom-stop-icon', 
-  html: `<div style="background-color: #0EA503; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #0EA503;"></div>`, 
-  iconSize: [14, 14], 
-  iconAnchor: [7, 7] 
+const iconDestino = new L.DivIcon({
+  className: 'custom-stop-icon',
+  html: `<div style="background-color: #0EA503; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #0EA503;"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
 });
 
 const iconOnibus = new L.DivIcon({
@@ -71,7 +71,7 @@ const TEMPO_CONFIRMACAO_MS = 5000;
 
 // ==================== COMPONENTE PRINCIPAL ====================
 
-export default function MainPage({ 
+export default function MainPage({
   itinerario,
   horario,
   origem,
@@ -84,7 +84,7 @@ export default function MainPage({
   const { position } = useGeoLocation({ ativo: true });
   const auth = getAuth();
   const isPageVisible = usePageVisibility();
-  
+
   // ==================== ESTADOS LOCAIS ====================
   const [reconectando, setReconectando] = useState(false);
   const ultimaReconexaoRef = useRef(0);
@@ -104,7 +104,7 @@ export default function MainPage({
   const [alertaMsg, setAlertaMsg] = useState(null);
   const [embarcando, setEmbarcando] = useState(false);
   const [posicaoOnibus, setPosicaoOnibus] = useState(null);
-  
+
   // ==================== ESTIMATIVAS ====================
   const [horarioChegadaOnibus, setHorarioChegadaOnibus] = useState(null);
   const [horarioEstimadoDestino, setHorarioEstimadoDestino] = useState(null);
@@ -114,7 +114,7 @@ export default function MainPage({
   const [carregandoTempo, setCarregandoTempo] = useState(false);
 
   const snackbarTimerRef = useRef(null);
-  
+
   const dataAtual = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const tripId = `${itinerario?.id}_${horario?.replace(':', '')}_${dataAtual}`;
 
@@ -129,14 +129,14 @@ export default function MainPage({
     }
     setStatusFluxoPersistido(value);
   }, [clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro, setStatusFluxoPersistido]);
-  
+
   const isRastreador = isRastreadorPersistido;
   const setIsRastreador = useCallback((value) => setIsRastreadorPersistido(value), [setIsRastreadorPersistido]);
   const gpsPassageiroAtivo = gpsPassageiroAtivoPersistido;
   const setGpsPassageiroAtivo = useCallback((value) => setGpsPassageiroAtivoPersistido(value), [setGpsPassageiroAtivoPersistido]);
 
   // ==================== FUNÇÕES AUXILIARES ====================
-  
+
   const getCoords = useCallback((idRaw) => {
     if (!idRaw) return null;
     const id = (typeof idRaw === 'object' ? idRaw.nome : idRaw).toString().toLowerCase().trim();
@@ -159,10 +159,10 @@ export default function MainPage({
     if (!itinerario || !horario || !origem || Object.keys(paradasData).length === 0) return;
     if (modoApenasConsulta) return;
     if (statusFluxo !== 'inicial') return;
-    
+
     setCarregandoEstimativa(true);
     try {
-      const paradasLista = itinerario.paradas.map(p => 
+      const paradasLista = itinerario.paradas.map(p =>
         (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
       );
       const indiceAtualOnibus = viagemAtiva?.indiceParada ?? 0;
@@ -181,10 +181,10 @@ export default function MainPage({
     if (!itinerario || !horario || !destino || Object.keys(paradasData).length === 0) return;
     if (modoApenasConsulta) return;
     if (statusFluxo === 'inicial') return;
-    
+
     setCarregandoEstimativa(true);
     try {
-      const paradasLista = itinerario.paradas.map(p => 
+      const paradasLista = itinerario.paradas.map(p =>
         (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
       );
       const resultado = await calcularHorarioEstimadoParada(
@@ -201,7 +201,7 @@ export default function MainPage({
   const calcularEstimativas = useCallback(async () => {
     if (!viagemAtiva || !itinerario || !horario || modoApenasConsulta) return;
     if (!origem && !destino) return;
-    
+
     setCarregandoTempo(true);
     try {
       if (statusFluxo === 'inicial' && origem) {
@@ -256,30 +256,30 @@ export default function MainPage({
   const handleConfirmarEmbarque = useCallback(async () => {
     if (embarcando) return;
     setEmbarcando(true);
-    
+
     try {
       const usuario = auth.currentUser;
       if (!usuario) {
         setAlertaMsg({ texto: 'Usuário não autenticado.', severidade: 'error' });
         return;
       }
-      
-      const paradasNormalizadas = itinerario.paradas.map(p => 
+
+      const paradasNormalizadas = itinerario.paradas.map(p =>
         (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
       );
-      
+
       const idxsOrigem = [];
       paradasNormalizadas.forEach((p, i) => {
         if (p === origem.toLowerCase().trim()) idxsOrigem.push(i);
       });
-      
+
       const idxsDestino = [];
       paradasNormalizadas.forEach((p, i) => {
         if (p === destino.toLowerCase().trim()) idxsDestino.push(i);
       });
-      
+
       let melhorOrigem = -1; let melhorDestino = -1; let menorDistancia = Infinity;
-      
+
       for (const o of idxsOrigem) {
         for (const d of idxsDestino) {
           if (o < d && (d - o) < menorDistancia) {
@@ -287,17 +287,17 @@ export default function MainPage({
           }
         }
       }
-      
+
       if (melhorOrigem === -1 || melhorDestino === -1) {
         setAlertaMsg({ texto: 'Parada não encontrada.', severidade: 'error' });
         return;
       }
-      
+
       if (melhorOrigem === paradasNormalizadas.length - 1) {
         setAlertaMsg({ texto: 'Você está na última parada.', severidade: 'warning' });
         return;
       }
-      
+
       let papel;
       try {
         papel = await entrarNaViagem(tripId, usuario, origem, destino, itinerario);
@@ -305,22 +305,22 @@ export default function MainPage({
         setAlertaMsg({ texto: 'Erro: ' + e.message, severidade: 'error' });
         return;
       }
-      
+
       if (papel === 'bloqueado') {
         setAlertaMsg({ texto: 'Você já está em outra viagem!', severidade: 'warning' });
         return;
       }
-      
+
       await setDoc(doc(db, "viagens_ativas", tripId), {
         ultimaParada: origem,
         indiceParada: melhorOrigem,
         atualizadoEm: serverTimestamp(),
       }, { merge: true });
-      
+
       setIsRastreador(papel === 'rastreador' || papel === 'reserva_prioritaria');
       setStatusFluxo('votando');
       setAlertaMsg({ texto: `Embarque confirmado!`, severidade: 'success' });
-      
+
     } catch (error) {
       setAlertaMsg({ texto: 'Erro ao confirmar embarque.', severidade: 'error' });
     } finally {
@@ -353,7 +353,7 @@ export default function MainPage({
       if (mounted) setParadasData(mapeamento);
       setLoading(false);
     });
-    
+
     const unsub = onSnapshot(doc(db, "viagens_ativas", tripId), (d) => {
       if (d.exists()) {
         const dados = d.data();
@@ -376,7 +376,7 @@ export default function MainPage({
         try {
           const docSnap = await getDoc(doc(db, "rotas_geometricas", docId));
           if (docSnap.exists() && docSnap.data().geometria?.length >= 2) geometrias[docId] = docSnap.data().geometria;
-        } catch (err) {}
+        } catch (err) { }
       }
       setGeometriaRotas(geometrias);
     };
@@ -477,71 +477,71 @@ export default function MainPage({
   // ==================== RENDER DOS TRAÇOS DO MAPA COM GRADIENTE ====================
   const renderGradiente = () => {
     if (paradasTrecho.length < 2) return null;
-    
+
     // Determinar índices de origem e destino
     const oriIdx = origem ? paradasTrecho.findIndex(p => p === origem.toLowerCase().trim()) : -1;
     const dstIdx = destino ? paradasTrecho.findIndex(p => p === destino.toLowerCase().trim()) : -1;
-    
+
     // Se não tiver origem e destino definidos, usar toda a rota
     const startIdx = (oriIdx !== -1 && dstIdx !== -1) ? oriIdx : 0;
     const endIdx = (oriIdx !== -1 && dstIdx !== -1) ? dstIdx : paradasTrecho.length - 1;
     const totalTramos = endIdx - startIdx;
-    
+
     return paradasTrecho.map((idA, i) => {
       if (i === paradasTrecho.length - 1) return null;
       const idB = paradasTrecho[i + 1];
       const chave = `${itinerario.id}_${idA}-${idB}`;
       const geometria = geometriaRotas[chave];
-      const c1 = getCoords(idA); 
+      const c1 = getCoords(idA);
       const c2 = getCoords(idB);
       if (!c1 || !c2) return null;
-      
-      let positions; 
+
+      let positions;
       let isEstimada = false;
       if (geometria && geometria.length >= 2) {
         positions = geometria.map(p => [p.lat, p.lng]);
       } else {
-        positions = [c1, c2]; 
+        positions = [c1, c2];
         isEstimada = true;
       }
-      
+
       // Determinar se este trecho está entre origem e destino
-      const isActiveSegment = (oriIdx !== -1 && dstIdx !== -1) 
+      const isActiveSegment = (oriIdx !== -1 && dstIdx !== -1)
         ? (i >= oriIdx && i < dstIdx)
         : true; // Se não tem origem/destino, mostrar toda a rota
-      
+
       // Calcular cor baseada na posição no trecho (gradiente vermelho -> verde)
       let cor = '#444444';
       let weight = 2;
       let opacity = 0.3;
-      
+
       if (isActiveSegment) {
         // Calcular progresso apenas nos trechos ativos
         const progresso = totalTramos > 0 ? (i - startIdx) / totalTramos : 0;
-        
+
         // Gradiente direto: vermelho (início) -> verde (fim)
         // Usando interpolação linear simples entre vermelho e verde
         const r = Math.round(255 * (1 - progresso));
         const g = Math.round(255 * progresso);
         const b = 0; // Sem azul para gradiente puro vermelho->verde
-        
+
         cor = `rgb(${r}, ${g}, ${b})`;
         weight = isEstimada ? 4 : 6;
         opacity = 0.5;
       }
-      
+
       return (
-        <Polyline 
-          key={i} 
-          positions={positions} 
-          pathOptions={{ 
+        <Polyline
+          key={i}
+          positions={positions}
+          pathOptions={{
             color: cor,
             weight: weight,
             opacity: opacity,
             dashArray: isEstimada && isActiveSegment ? '10, 8' : undefined,
-            lineCap: 'round', 
+            lineCap: 'round',
             lineJoin: 'round'
-          }} 
+          }}
         />
       );
     });
@@ -561,22 +561,22 @@ export default function MainPage({
 
   return (
     <div className="mainpage-wrapper">
-      
+
       {/* MAPA AO FUNDO */}
       <div className="map-container-full">
         <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
           {renderGradiente()}
-          
+
           {posicaoOnibus && viagemAtiva && !modoApenasConsulta && (
             <Marker position={[posicaoOnibus.lat, posicaoOnibus.lng]} icon={iconOnibus} />
           )}
-          
+
           {paradasTrecho.map((id, i) => {
             if (id.startsWith('int_')) return null;
             const c = getCoords(id);
             if (!c) return null;
-            
+
             let icon = iconIntermediario;
             const idLower = id.toLowerCase().trim();
             if (idLower === origem?.toLowerCase().trim()) {
@@ -584,7 +584,7 @@ export default function MainPage({
             } else if (idLower === destino?.toLowerCase().trim()) {
               icon = iconDestino;
             }
-            
+
             return (
               <Marker key={i} position={c} icon={icon}>
                 <Popup><Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>{traduzirSigla(id)}</Typography></Popup>
@@ -611,10 +611,10 @@ export default function MainPage({
 
       {/* CONTAINER INFERIOR (Ações e Informações) */}
       <div className="map-bottom-wrapper">
-        
+
         {/* ÁREA DE AÇÕES */}
         <div className="map-actions-area">
-          
+
           {/* Estado de Expulsão (Conclusão) */}
           {statusFluxo === 'expulso' && (
             <div className="expulsao-alert">
@@ -657,13 +657,13 @@ export default function MainPage({
                   </Stack>
                 </Paper>
               )}
-              
-        {/* BOTÃO DISTANCIA PARADA METROS */}
-              <Button 
-                variant="contained" 
+
+              {/* BOTÃO DISTANCIA PARADA METROS */}
+              <Button
+                variant="contained"
                 className="dark-action-btn"
-                disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50} 
-                onClick={async () => { if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); await handleConfirmarEmbarque(); }} 
+                disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50}
+                onClick={async () => { if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); await handleConfirmarEmbarque(); }}
                 sx={{ width: '100%' }}
               >
                 {embarcando ? 'Processando...' : ((distanciaAteParada || distanciaAuto || 999) > 50 ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)` : (embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' ? `Aguardando (${Math.ceil(tempoRestante / 1000)}s)...` : 'Confirmar Embarque'))}
@@ -683,7 +683,7 @@ export default function MainPage({
               {horario}
             </div>
           </div>
-          
+
           {/* Legenda do Gradiente */}
           <div className="map-legend">
             <div className="map-legend-item">
@@ -692,7 +692,7 @@ export default function MainPage({
             </div>
             <span className="map-legend-divider">→</span>
             <div className="map-legend-item">
-              <div className="map-legend-color" style={{ 
+              <div className="map-legend-color" style={{
                 background: 'linear-gradient(to right, #FF0000, #00FF00)',
                 width: '30px',
                 height: '4px',
@@ -709,7 +709,7 @@ export default function MainPage({
         </div>
 
       </div>
-      
+
       {/* SNACKBAR DE ALERTAS */}
       <Snackbar open={!!alertaMsg} autoHideDuration={4000} onClose={handleCloseAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }} sx={{ mt: 10 }}>
         <Alert onClose={handleCloseAlert} severity={alertaMsg?.severidade || 'info'} sx={{ width: '100%', fontWeight: 'bold' }}>

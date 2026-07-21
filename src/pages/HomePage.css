@@ -1,7 +1,7 @@
 /* Container Geral e Fundo do Dispositivo */
 .home-page-bg {
   min-height: 100vh;
-  min-height: 100dvh; /* Para dispositivos com notch */
+  min-height: 100dvh;
   background-color: #2E2E2E;
   display: flex;
   justify-content: center;
@@ -15,7 +15,7 @@
   flex-direction: column;
   background-color: #030303;
   height: 100vh;
-  height: 100dvh; /* Para dispositivos com notch */
+  height: 100dvh;
   width: 100%;
   max-width: 450px;
   margin: 0 auto;
@@ -55,10 +55,9 @@
   overflow-y: auto;
   min-height: 0;
   padding-bottom: 16px;
-  -webkit-overflow-scrolling: touch; /* Melhor performance em iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Esconder barra de rolagem padrão */
 .scroll-content::-webkit-scrollbar {
   width: 0px;
 }
@@ -72,6 +71,8 @@
   flex-direction: column;
   gap: 8px;
   margin-bottom: 24px;
+  position: relative;
+  z-index: 1;
 }
 
 .gps-refresh-btn {
@@ -104,10 +105,9 @@
   background-color: #030303;
   width: 100%;
   box-sizing: border-box;
-  margin-top: auto; /* Empurra para o final do container */
+  margin-top: auto;
 }
 
-/* Wrapper do botão Renomear – fixo acima do navbar */
 .rename-wrapper {
   display: flex;
   justify-content: center;
@@ -115,7 +115,6 @@
   width: 100%;
 }
 
-/* Estilo do botão Renomear */
 .rename-btn {
   background-color: #2E2E2E !important;
   color: #BFBDBD !important;
@@ -126,7 +125,6 @@
   font-weight: 500 !important;
 }
 
-/* Menu de Navegação Inferior */
 .bottom-nav-floating {
   width: 100%;
   background-color: #2E2E2E;
@@ -137,7 +135,7 @@
   padding: 14px 0;
   z-index: 10;
   position: relative;
-  min-height: 70px; /* Altura mínima para garantir que não seja cortado */
+  min-height: 70px;
 }
 
 /* Lista de Resultados de Ônibus (Cards) */
@@ -227,7 +225,6 @@
   gap: 10px;
 }
 
-/* Botões de Hora */
 .hour-btn {
   background-color: #7C7C7C !important;
   color: #2E2E2E !important;
@@ -276,7 +273,7 @@
   padding: 4px;
   opacity: 0.5;
   min-width: 48px;
-  min-height: 48px; /* Área de clique maior */
+  min-height: 48px;
 }
 
 .nav-icon-btn.active {
@@ -287,7 +284,400 @@
   opacity: 0.8;
 }
 
-/* Ajustes para dispositivos móveis */
+/* ==================== DROPDOWN - ESTILOS PARA CENTRALIZAR ==================== */
+.MuiPopover-root {
+  z-index: 1400 !important;
+}
+
+/* IMPORTANTE: o transform/centralização fica no PAPER, não no MuiPopover-root.
+   Colocar transform no root quebra o "containing block" de tudo que é
+   position:fixed dentro dele (inclusive o backdrop), o que impedia o
+   scroll por toque na lista. */
+.MuiPopover-root .MuiPaper-root {
+  background-color: #2E2E2E !important;
+  border-radius: 16px !important;
+  height: auto !important;
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior: contain !important;
+  width: calc(100% - 32px) !important;
+  min-width: 200px !important;
+  max-width: 320px !important;
+  margin: 0 !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.MuiPopover-root .MuiPaper-root::-webkit-scrollbar {
+  width: 4px;
+}
+
+.MuiPopover-root .MuiPaper-root::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.MuiPopover-root .MuiPaper-root::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.MuiPopover-root .MuiMenuItem-root {
+  color: #FFFFFF !important;
+  padding: 12px 16px !important;
+  font-size: 15px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.MuiPopover-root .MuiMenuItem-root:last-child {
+  border-bottom: none !important;
+}
+
+.MuiPopover-root .MuiMenuItem-root:hover {
+  background-color: #3A3A3A !important;
+}
+
+.MuiPopover-root .MuiMenuItem-root.Mui-selected {
+  background-color: #0845FF !important;
+}
+/* ==================== ESTILOS DOS MODAIS ==================== */
+
+/* Modal Base - Fundo escuro com opacidade
+   :not(.MuiPopover-root) evita que essas regras "vazem" para o dropdown
+   do Select, que também usa Modal por baixo dos panos (MuiModal-root +
+   MuiPopover-root ao mesmo tempo). Sem isso, o overflow:hidden daqui
+   sobrescrevia o overflow-y:auto do dropdown e travava o scroll. */
+.MuiModal-root:not(.MuiPopover-root) .MuiBackdrop-root {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+}
+
+/* Modal Paper - Estilo principal do modal */
+.MuiModal-root:not(.MuiPopover-root) .MuiPaper-root {
+  background-color: #1A1A1A !important;
+  color: #FFFFFF !important;
+  border-radius: 24px !important;
+  padding: 24px 20px 20px 20px !important;
+  max-width: 420px !important;
+  width: 100% !important;
+  margin: 0 16px !important;
+  max-height: 80vh !important;
+  border: 1px solid #2A2A2A !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8) !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+/* Para garantir que o modal fique centralizado */
+.MuiModal-root:not(.MuiPopover-root) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Header do Modal - Título e Botão Fechar */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: #FFFFFF !important;
+  letter-spacing: -0.3px;
+}
+
+.modal-close-btn {
+  color: #7C7C7C !important;
+  padding: 4px !important;
+  transition: color 0.2s !important;
+}
+
+.modal-close-btn:hover {
+  color: #FFFFFF !important;
+}
+
+/* Lista de itens do modal - Estilo dos cards */
+.modal-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 20px;
+}
+
+.modal-item-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.modal-item-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-item-list::-webkit-scrollbar-thumb {
+  background: #3A3A3A;
+  border-radius: 4px;
+}
+
+/* Item do Modal - Estilo dos cards individuais */
+.modal-item {
+  background-color: #2A2A2A !important;
+  border-radius: 16px !important;
+  padding: 14px 18px !important;
+  margin-bottom: 8px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  cursor: pointer;
+  transition: all 0.2s ease !important;
+  border: 1px solid transparent !important;
+}
+
+.modal-item:hover {
+  background-color: #353535 !important;
+  border-color: #3A3A3A !important;
+}
+
+.modal-item.selected {
+  background-color: #0845FF !important;
+  border-color: #0845FF !important;
+}
+
+.modal-item.selected .modal-item-text {
+  color: #FFFFFF !important;
+}
+
+.modal-item-text {
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  color: #E0E0E0 !important;
+}
+
+.modal-item-text-secondary {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  color: #8A8A8A !important;
+}
+
+/* Check/Select icon no item selecionado */
+.modal-item-check {
+  color: #FFFFFF !important;
+  font-size: 20px !important;
+}
+
+/* Botão Salvar do Modal */
+.modal-save-btn {
+  background-color: #0845FF !important;
+  color: #FFFFFF !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+  border-radius: 16px !important;
+  padding: 14px 0 !important;
+  width: 100% !important;
+  transition: background-color 0.2s !important;
+  border: none !important;
+}
+
+.modal-save-btn:hover {
+  background-color: #0037CC !important;
+}
+
+.modal-save-btn:disabled {
+  background-color: #3A3A3A !important;
+  color: #7C7C7C !important;
+}
+
+/* Botão Fechar do Modal (versão secundária) */
+.modal-close-action-btn {
+  background-color: #2A2A2A !important;
+  color: #FFFFFF !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  border-radius: 16px !important;
+  padding: 14px 0 !important;
+  width: 100% !important;
+  transition: background-color 0.2s !important;
+  border: none !important;
+  margin-top: 8px !important;
+}
+
+.modal-close-action-btn:hover {
+  background-color: #3A3A3A !important;
+}
+
+/* ==================== MODAL DE PARADAS (Lista com endereços) ==================== */
+
+.modal-paradas-item {
+  background-color: transparent !important;
+  padding: 16px 0 !important;
+  border-bottom: 1px solid #2A2A2A !important;
+  cursor: default !important;
+}
+
+.modal-paradas-item:last-child {
+  border-bottom: none !important;
+}
+
+.modal-paradas-name {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #FFFFFF !important;
+  margin-bottom: 4px !important;
+}
+
+.modal-paradas-address {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: #7C7C7C !important;
+  line-height: 1.4 !important;
+}
+
+/* ==================== ESTILOS PARA O MODO ALUNO ==================== */
+.aluno-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.aluno-upload-area {
+  width: 100%;
+  max-width: 362px;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 16px !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.3s;
+  padding: 0 !important;
+  text-align: center;
+  aspect-ratio: auto !important;
+  min-height: 100px;
+  max-height: 300px;
+}
+
+.aluno-upload-area:hover {
+  opacity: 0.8;
+}
+
+.aluno-upload-area svg {
+  color: #555;
+}
+
+.aluno-upload-area p {
+  color: #777;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.aluno-upload-area .upload-placeholder {
+  width: 100%;
+  min-height: 150px;
+  background-color: #2A2A2A;
+  border-radius: 16px;
+  border: 2px dashed #444;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.aluno-buttons-row {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  max-width: 362px;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+}
+
+.aluno-btn {
+  flex: 1;
+  background-color: #2A2A2A !important;
+  color: white !important;
+  padding: 14px 8px !important;
+  border-radius: 20px !important;
+  font-weight: bold !important;
+  text-transform: none !important;
+  transition: background-color 0.2s;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  font-size: clamp(12px, 3vw, 16px) !important;
+}
+
+.aluno-btn:hover {
+  background-color: #3A3A3A !important;
+}
+
+/* Ajuste para os selects de subir/descer - centralizar */
+.input-block-container .MuiSelect-select {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding: 8px 0 !important;
+}
+
+.input-block-container .MuiSelect-select span {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* ==================== AJUSTE PARA O TÍTULO HORÁRIOS COM ÍCONE ==================== */
+.screen-title-with-icon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.screen-title-with-icon .screen-title {
+  margin-bottom: 0;
+}
+
+.paradas-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+}
+
+.paradas-icon-btn:hover {
+  opacity: 0.7;
+}
+
+.paradas-icon-btn img {
+  width: 32px;
+  height: 32px;
+  filter: brightness(0) saturate(100%) invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(85%);
+  transition: filter 0.2s;
+}
+
+.paradas-icon-btn:hover img {
+  filter: brightness(0) saturate(100%) invert(100%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(100%);
+}
+
+/* ==================== RESPONSIVIDADE ==================== */
 @media (max-width: 480px) {
   .home-page-container {
     padding: 16px;
@@ -323,9 +713,54 @@
     padding: 8px 0;
     padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
   }
+  
+  .aluno-upload-area {
+    max-width: 100%;
+  }
+  
+  .aluno-buttons-row {
+    flex-direction: row !important;
+    max-width: 100%;
+    gap: 12px;
+  }
+  
+  .aluno-btn {
+    font-size: clamp(11px, 2.8vw, 14px) !important;
+    padding: 12px 6px !important;
+  }
+  
+  .MuiModal-root:not(.MuiPopover-root) .MuiPaper-root {
+    padding: 20px 16px !important;
+    border-radius: 20px !important;
+    margin: 0 12px !important;
+  }
+  
+  .modal-title {
+    font-size: 18px !important;
+  }
+  
+  .modal-item {
+    padding: 12px 14px !important;
+    min-height: 46px;
+  }
+  
+  .modal-item-text {
+    font-size: 15px !important;
+  }
+
+  /* Ajuste do dropdown para mobile */
+  .MuiPopover-root .MuiPaper-root {
+    width: calc(100% - 24px) !important;
+    max-width: 400px !important;
+    max-height: 65vh !important;
+  }
+
+  .MuiPopover-root .MuiMenuItem-root {
+    font-size: 14px !important;
+    padding: 12px 16px !important;
+  }
 }
 
-/* Ajustes para telas muito pequenas */
 @media (max-width: 380px) {
   .home-page-container {
     padding: 12px;
@@ -348,86 +783,41 @@
     font-size: 14px !important;
     padding: 6px 12px !important;
   }
-}
-
-/* Estilos para a seção Aluno */
-.aluno-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  padding: 16px 0;
-  width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.aluno-upload-area {
-  width: 100%;
-  max-width: 362px;
-  aspect-ratio: 362 / 228;
-  background-color: #2A2A2A;
-  border-radius: 16px;
-  border: 2px dashed #444;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: border-color 0.3s;
-  padding: 20px;
-  text-align: center;
-}
-
-.aluno-upload-area:hover {
-  border-color: #0845FF;
-}
-
-.aluno-upload-area svg {
-  color: #555;
-}
-
-.aluno-upload-area p {
-  color: #777;
-  font-size: 14px;
-  margin-top: 8px;
-}
-
-.aluno-buttons-row {
-  display: flex;
-  gap: 16px;
-  width: 100%;
-  max-width: 362px;
-}
-
-.aluno-btn {
-  flex: 1;
-  background-color: #2A2A2A !important;
-  color: white !important;
-  padding: 14px 0 !important;
-  border-radius: 12px !important;
-  font-weight: bold !important;
-  text-transform: none !important;
-  transition: background-color 0.2s;
-}
-
-.aluno-btn:hover {
-  background-color: #3A3A3A !important;
-}
-
-/* Ajustes para o modal de renomear/favoritos */
-.MuiModal-root .MuiPaper-root {
-  background-color: #191919;
-}
-
-/* Responsividade */
-@media (max-width: 480px) {
-  .aluno-upload-area {
-    max-width: 100%;
+  
+  .MuiModal-root:not(.MuiPopover-root) .MuiPaper-root {
+    padding: 16px 12px !important;
+    border-radius: 16px !important;
+    margin: 0 8px !important;
   }
+  
+  .modal-item {
+    padding: 10px 12px !important;
+    min-height: 42px;
+    border-radius: 12px !important;
+  }
+  
+  .modal-item-text {
+    font-size: 14px !important;
+  }
+
+  .aluno-btn {
+    font-size: clamp(10px, 2.5vw, 12px) !important;
+    padding: 10px 4px !important;
+  }
+
   .aluno-buttons-row {
-    flex-direction: column;
-    max-width: 100%;
+    gap: 8px;
+  }
+
+  .MuiPopover-root .MuiPaper-root {
+    width: calc(100% - 16px) !important;
+    max-width: 340px !important;
+    max-height: 60vh !important;
+  }
+
+  .MuiPopover-root .MuiMenuItem-root {
+    font-size: 13px !important;
+    padding: 10px 14px !important;
   }
 }
 
