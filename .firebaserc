@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "buspel"
+  },
+  "targets": {
+    "buspel": {
+      "hosting": {
+        "busepel": [
+          "busepel"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
