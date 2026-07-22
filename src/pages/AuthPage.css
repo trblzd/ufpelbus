@@ -99,24 +99,6 @@
   text-transform: lowercase;
 }
 
-.auth-cobalto-btn {
-  background-color: #2E2E2E;
-  color: #E2E8F0;
-  border: none;
-  border-radius: 24px;
-  padding: 14px 24px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  width: 100%;
-  margin-bottom: 40px;
-  transition: opacity 0.2s;
-}
-
-.auth-cobalto-btn:hover {
-  opacity: 0.9;
-}
-
 .auth-submit-btn {
   background-color: #0845FF;
   color: #FFFFFF;

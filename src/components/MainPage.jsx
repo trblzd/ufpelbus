@@ -406,10 +406,32 @@ export default function MainPage({
     }
   }, [position, paradasData, origem, getCoords]);
 
-  const handleExpulsar = useCallback((motivo) => {
-    setStatusFluxo('expulso');
-    setTimeout(() => voltar(), 3000);
-  }, [voltar, setStatusFluxo]);
+    const handleExpulsar = useCallback(async (motivo) => {
+      console.log(`[Expulsão] Motivo: ${motivo}`);
+      
+      // Se foi expulso por destino, limpa a viagem do Firebase
+      if (motivo === 'destino' && tripId) {
+        try {
+          // Marca a viagem como concluída
+          await updateDoc(doc(db, "viagens_ativas", tripId), {
+            status: 'concluida',
+            horarioConclusao: serverTimestamp(),
+          });
+        } catch (error) {
+          console.warn('Erro ao concluir viagem:', error);
+        }
+      }
+      
+      setStatusFluxo('expulso');
+      setTimeout(() => {
+        // Limpa todos os dados persistentes
+        clearStatusFluxo();
+        clearIsRastreador();
+        clearViagemId();
+        clearGpsPassageiro();
+        voltar();
+      }, 3000);
+    }, [voltar, setStatusFluxo, tripId, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro]);
 
   const handleVotarLotacao = useCallback(async (statusLot) => {
     const valores = { 'vazio': 1, 'medio': 3, 'lotado': 5 };

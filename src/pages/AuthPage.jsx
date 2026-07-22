@@ -12,7 +12,6 @@ export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);        // true: login, false: cadastro
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [matricula, setMatricula] = useState('');      // Exclusivo visual da tela de cadastro
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -108,19 +107,6 @@ export default function AuthPage() {
             />
           </div>
 
-          {!isLogin && (
-            <div className="auth-input-group">
-              <label className="auth-label">Matrícula:</label>
-              <input 
-                type="text" 
-                className="auth-input"
-                value={matricula} 
-                onChange={(e) => setMatricula(e.target.value)}
-                required
-              />
-            </div>
-          )}
-
           <div className="auth-input-group">
             <label className="auth-label">Senha:</label>
             <input 
@@ -138,10 +124,6 @@ export default function AuthPage() {
             <div className="auth-divider-text">ou</div>
             <div className="auth-line"></div>
           </div>
-
-          <button type="button" className="auth-cobalto-btn">
-            Continue com o Cobalto
-          </button>
 
           {error && <div className="auth-error-msg">{error}</div>}
 

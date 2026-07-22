@@ -211,15 +211,6 @@ function AppDataProvider({ children }) {
   );
 }
 
-// Componente de loading global
-function GlobalLoading() {
-  return (
-    <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', bgcolor: '#E2E8F0' }}>
-      <CircularProgress size={48} sx={{ color: '#00418F' }} />
-    </Box>
-  );
-}
-
 // Wrapper para MainPage que extrai parâmetros da URL
 function MainPageWrapper() {
   const searchParams = new URLSearchParams(window.location.search);
@@ -272,12 +263,7 @@ function PersonalizationPageWrapper() {
 
 // Rotas principais
 function AppRoutes() {
-  const { user, loading } = useAppData();
-  
-  if (loading) {
-    return <GlobalLoading />;
-  }
-  
+  const { user } = useAppData();
   if (!user) {
     return <AuthPage />;
   }

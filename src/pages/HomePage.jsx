@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { doc, onSnapshot, getDoc, collection, getDocs } from 'firebase/firestore';
+import { getAuth, signOut } from 'firebase/auth';
 import { useLocation } from '../hooks/useLocation';
 import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
@@ -22,6 +23,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import StarIcon from '@mui/icons-material/Star';
 import CheckIcon from '@mui/icons-material/Check';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useAppData } from '../App';
 import { getFavoritos, toggleFavorito } from '../services/favoritosService';
 import { getAllApelidos, setMultiplosApelidos } from '../services/apelidosService';
@@ -814,6 +816,17 @@ export default function HomePage() {
   
   const cacheViagensRef = useRef({});
 
+  // ==================== FUNÇÃO DE LOGOUT ====================
+  const handleLogout = async () => {
+    try {
+      const auth = getAuth();
+      await signOut(auth);
+      navigate('/');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
+  };
+
   const categoriesConfig = useMemo(() => ({
     Anglo: ['anglo', 'anglo21', 'anglo2145', 'anglo730', 'anglo8', 'angloru'],
     Capão: ['anglocapao', 'capaoanglo', 'capaodireito', 'capaodireitobr', 'capaofamedanglo', 'capaolyceu', 'cotadacapao', 'direitocapao', 'famedcapao', 'lyceucapao'],
@@ -1195,9 +1208,21 @@ export default function HomePage() {
             {/* MODO ALUNO */}
             {modo === 'aluno' && (
               <div className="aluno-container">
-                <div className="screen-title" style={{ textAlign: 'left', width: '100%' }}>
-                  Olá, aluno!
-                </div>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mb: 2 }}>
+                  <div className="screen-title" style={{ marginBottom: 0 }}>Olá, aluno!</div>
+                  <IconButton 
+                    onClick={handleLogout} 
+                    sx={{ 
+                      color: '#7C7C7C',
+                      '&:hover': { color: '#FF4444' },
+                      padding: '8px',
+                      transition: 'color 0.2s'
+                    }}
+                    title="Sair da conta"
+                  >
+                    <LogoutIcon sx={{ fontSize: '28px' }} />
+                  </IconButton>
+                </Box>
                 
                 <div 
                   className="aluno-upload-area" 
@@ -1281,6 +1306,7 @@ export default function HomePage() {
                       '&:hover': { color: '#FFFFFF' },
                       padding: '8px'
                     }}
+                    title="Ver paradas"
                   >
                     <img 
                       src="/paradas.svg" 
