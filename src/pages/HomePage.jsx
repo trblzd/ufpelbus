@@ -1,3 +1,4 @@
+// HomePage.jsx
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
@@ -12,7 +13,9 @@ import {
 import {
   Box, Tabs, Tab, Paper, Typography, Button,
   MenuItem, Select, FormControl, CircularProgress, createTheme, ThemeProvider,
-  List, ListItemButton, Modal, IconButton, Divider, ListItem
+  List, ListItemButton, Modal, IconButton, Divider, ListItem, Link,
+  Snackbar, Alert,
+  Tooltip
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
@@ -42,10 +45,20 @@ const PARADAS_IGNORADAS = ['int_', 'ponto-indefinido'];
 
 // ==================== COMPONENTE DE ITEM DE ÔNIBUS ====================
 const BusItem = ({ opt, onClick, safeTraduzir }) => {
-  const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null, atualizadoEm: null });
+  const [viagemInfo, setViagemInfo] = useState({ lastStop: null, lotacao: null, atualizadoEm: null, indiceParada: null });
   const [tempoParaOnibusChegar, setTempoParaOnibusChegar] = useState(null);
   const [carregandoTempo, setCarregandoTempo] = useState(false);
   const [isExpirado, setIsExpirado] = useState(false);
+  const [tempoDecorrido, setTempoDecorrido] = useState(null);
+  const intervalRef = useRef(null);
+
+  // Calcula o horário estimado de chegada baseado no horário atual
+  const calcularHorarioChegada = (minutos) => {
+    if (!minutos || minutos < 0) return null;
+    const agora = new Date();
+    agora.setMinutes(agora.getMinutes() + minutos);
+    return agora.toTimeString().slice(0, 5);
+  };
 
   useEffect(() => {
     if (!opt?.it?.id || !opt?.horario) return;
@@ -55,7 +68,7 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
       if (d.exists()) {
         setViagemInfo(d.data());
       } else {
-        setViagemInfo({ lastStop: null, lotacao: null, atualizadoEm: null });
+        setViagemInfo({ lastStop: null, lotacao: null, atualizadoEm: null, indiceParada: null });
       }
     });
     return () => unsub();
@@ -71,6 +84,30 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     const minutosPassados = Math.floor((agora - dataPost) / 60000);
     setIsExpirado(minutosPassados > Number(opt.it.duracaoEstimada));
   }, [viagemInfo.atualizadoEm, opt.it]);
+
+  // Atualiza o tempo decorrido a cada 15 segundos
+  useEffect(() => {
+    const atualizarTempoDecorrido = () => {
+      if (!viagemInfo.atualizadoEm) {
+        setTempoDecorrido(null);
+        return;
+      }
+      const agora = Date.now();
+      const dataPost = viagemInfo.atualizadoEm.toDate?.() || new Date(viagemInfo.atualizadoEm.seconds * 1000);
+      const diffMs = agora - dataPost.getTime();
+      const diffMinutos = Math.floor(diffMs / 60000);
+      setTempoDecorrido(diffMinutos);
+    };
+
+    atualizarTempoDecorrido();
+
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(atualizarTempoDecorrido, 15000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [viagemInfo.atualizadoEm]);
 
   useEffect(() => {
     const buscarTempoEstimado = async () => {
@@ -90,6 +127,33 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     buscarTempoEstimado();
   }, [opt, viagemInfo]);
 
+  // Atualiza a estimativa a cada 15 segundos
+  useEffect(() => {
+    if (!opt?.it?.id || !opt?.horario || !opt?.origem) return;
+    
+    const atualizarEstimativa = () => {
+      if (!viagemInfo || viagemInfo.indiceParada === undefined) return;
+      setCarregandoTempo(true);
+      (async () => {
+        try {
+          const DocsViagem = { indiceParada: viagemInfo.indiceParada || 0 };
+          const resultado = await calcularTempoParaOnibusChegarAteVoce(DocsViagem, opt.it, opt.origem, opt.horario);
+          if (resultado) setTempoParaOnibusChegar(resultado);
+        } catch (error) {
+          console.warn("Erro ao buscar tempo estimado:", error);
+        } finally {
+          setCarregandoTempo(false);
+        }
+      })();
+    };
+
+    const estimativaInterval = setInterval(atualizarEstimativa, 15000);
+    
+    return () => {
+      clearInterval(estimativaInterval);
+    };
+  }, [opt, viagemInfo]);
+
   const getEmojiLotacao = (nivel) => {
     if (isExpirado) return '🟡';
     if (nivel === 'lotado') return '🔴';
@@ -98,23 +162,50 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     return '';
   };
 
-  const temInformacaoAtiva = viagemInfo.lastStop && !isExpirado;
+  const temInformacaoAtiva = viagemInfo.lastStop && !isExpirado && viagemInfo.atualizadoEm;
+
+  const formatarTempoDecorrido = (minutos) => {
+    if (minutos === null || minutos === undefined) return null;
+    if (minutos < 1) return 'agora mesmo';
+    if (minutos === 1) return '1 minuto';
+    return `${minutos} minutos`;
+  };
+
+  const tempoDecorridoFormatado = formatarTempoDecorrido(tempoDecorrido);
+
+  const horarioChegadaEstimado = useMemo(() => {
+    if (tempoParaOnibusChegar?.status === 'chegando' && tempoParaOnibusChegar.minutos) {
+      return calcularHorarioChegada(tempoParaOnibusChegar.minutos);
+    }
+    if (tempoParaOnibusChegar?.status === 'aqui') {
+      return 'agora mesmo';
+    }
+    return null;
+  }, [tempoParaOnibusChegar]);
 
   return (
     <Paper className="bus-item-card" elevation={0}>
       <ListItemButton onClick={onClick} sx={{ p: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography className="bus-item-title">{opt.cat}</Typography>
-            {viagemInfo.lotacao && (
+            {viagemInfo.lotacao && !isExpirado && (
               <span style={{ fontSize: '14px' }}>{getEmojiLotacao(viagemInfo.lotacao)}</span>
             )}
           </Box>
 
           {temInformacaoAtiva ? (
-            <Typography className="bus-item-info-line">
-              Última parada: {safeTraduzir(viagemInfo.lastStop)}
-            </Typography>
+            <>
+              <Typography className="bus-item-info-line">
+                Visto por último em: {safeTraduzir(viagemInfo.lastStop)}
+                {tempoDecorridoFormatado && ` (há ${tempoDecorridoFormatado})`}
+              </Typography>
+              {viagemInfo.lotacao && !isExpirado && (
+                <Typography className="bus-item-info-line" style={{ color: '#A1A1AA' }}>
+                  Lotação: {viagemInfo.lotacao === 'vazio' ? 'Vazio' : viagemInfo.lotacao === 'medio' ? 'Médio' : 'Lotado'}
+                </Typography>
+              )}
+            </>
           ) : (
             <Typography className="bus-item-info-line" style={{ color: '#7C7C7C', fontStyle: 'italic' }}>
               Sem informações
@@ -123,13 +214,13 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
 
           {carregandoTempo ? (
             <Typography className="bus-item-info-line">Calculando tempo...</Typography>
-          ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'chegando' ? (
+          ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'chegando' && horarioChegadaEstimado ? (
             <Typography className="bus-item-info-line" style={{ color: '#0845FF', fontWeight: '600' }}>
-              Chega em {tempoParaOnibusChegar.minutos} min
+              Pode chegar até {horarioChegadaEstimado}
             </Typography>
           ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'aqui' ? (
             <Typography className="bus-item-info-line" style={{ color: '#0845FF', fontWeight: '600' }}>
-              Está no seu ponto!
+              Está no seu ponto agora!
             </Typography>
           ) : null}
         </Box>
@@ -479,13 +570,6 @@ const ModalFavoritos = ({ open, onClose, idsParadas }) => {
 
 // ==================== COMPONENTE MODAL CARDÁPIO ====================
 const ModalCardapio = ({ open, onClose }) => {
-  const itensCardapio = [
-    { categoria: 'Acompanhamentos', itens: ['Arroz Branco', 'Arroz Integral', 'Feijão Preto', 'Massa Primavera'] },
-    { categoria: 'Proteínas', itens: ['Frango Acebolado', 'Proteína Acebolada'] },
-    { categoria: 'Saladas', itens: ['Salada Folhosa', 'Salada Crua', 'Salada Cozida'] },
-    { categoria: 'Sobremesa', itens: ['Fruta'] },
-  ];
-
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
@@ -500,45 +584,49 @@ const ModalCardapio = ({ open, onClose }) => {
         flexDirection: 'column',
         border: '1px solid #2A2A2A',
         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        alignItems: 'center',
+        justifyContent: 'center'
       }}>
         <Typography sx={{ 
           color: '#FFFFFF', 
-          fontSize: '20px', 
+          fontSize: '24px', 
           fontWeight: 700,
-          mb: 2
+          mb: 2,
+          textAlign: 'center'
         }}>
-          Cardápio do Dia
+          Cardápio RU
         </Typography>
         
         <Box sx={{ 
           flex: 1,
-          overflowY: 'auto',
-          pr: 1,
-          '&::-webkit-scrollbar': {
-            width: '4px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'transparent',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: '#3A3A3A',
-            borderRadius: '4px',
-          }
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          py: 4
         }}>
-          {itensCardapio.map((grupo, idx) => (
-            <Box key={idx} sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" sx={{ color: '#0845FF', fontWeight: 'bold', mb: 0.5 }}>
-                {grupo.categoria}
-              </Typography>
-              {grupo.itens.map((item, i) => (
-                <Typography key={i} variant="body2" sx={{ py: 0.3, color: '#DDD' }}>
-                  • {item}
-                </Typography>
-              ))}
-              {idx < itensCardapio.length - 1 && <Divider sx={{ my: 1, borderColor: '#333' }} />}
-            </Box>
-          ))}
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              color: '#7C7C7C', 
+              textAlign: 'center',
+              fontWeight: 500,
+              mb: 1
+            }}
+          >
+            Página em construção
+          </Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: '#5A5A5A', 
+              textAlign: 'center',
+              maxWidth: '280px'
+            }}
+          >
+            Em breve você poderá consultar o cardápio do RU aqui!
+          </Typography>
         </Box>
         
         <Button 
@@ -791,6 +879,89 @@ const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
   );
 };
 
+// ==================== MODAL SAIBA MAIS ====================
+const ModalSaibaMais = ({ open, onClose }) => {
+  return (
+    <Modal open={open} onClose={onClose}>
+      <Box sx={{
+        backgroundColor: '#1A1A1A',
+        borderRadius: '24px',
+        padding: '24px 20px 20px 20px',
+        maxWidth: '420px',
+        width: '100%',
+        margin: '0 16px',
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid #2A2A2A',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+        overflow: 'hidden'
+      }}>
+        <Typography sx={{ 
+          color: '#FFFFFF', 
+          fontSize: '20px', 
+          fontWeight: 700,
+          mb: 2
+        }}>
+          Sobre o Busepel
+        </Typography>
+        
+        <Box sx={{ 
+          flex: 1,
+          overflowY: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#3A3A3A',
+            borderRadius: '4px',
+          }
+        }}>
+          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+            Projeto desenvolvido para a disciplina de Design de Interação em 2026/1.
+          </Typography>
+          
+          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+            Não armazenamos a imagem da sua carteirinha, fique tranquilo!
+          </Typography>
+          
+          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+            Para reportar bugs ou dar sugestões, entre no nosso grupo do WhatsApp:
+          </Typography>
+          <Link 
+            href="https://chat.whatsapp.com/ESORzl0bwYO9pNPHWMYXe9" 
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{ 
+              color: '#0845FF',
+              fontWeight: 600,
+              textDecoration: 'underline',
+              '&:hover': { color: '#0037CC' }
+            }}
+          >
+            Clique aqui para entrar no grupo
+          </Link>
+        </Box>
+        
+        <Button 
+          className="modal-save-btn" 
+          onClick={onClose}
+          sx={{ 
+            mt: 2,
+            flexShrink: 0
+          }}
+        >
+          FECHAR
+        </Button>
+      </Box>
+    </Modal>
+  );
+};
+
 // ==================== COMPONENTE PRINCIPAL ====================
 export default function HomePage() {
   const navigate = useNavigate();
@@ -813,6 +984,9 @@ export default function HomePage() {
   const [modalCardapioOpen, setModalCardapioOpen] = useState(false);
   const [modalUploadOpen, setModalUploadOpen] = useState(false);
   const [modalParadasOpen, setModalParadasOpen] = useState(false);
+  const [modalSaibaMaisOpen, setModalSaibaMaisOpen] = useState(false);
+  
+  const [alertSnackbar, setAlertSnackbar] = useState(null);
   
   const cacheViagensRef = useRef({});
 
@@ -984,8 +1158,72 @@ export default function HomePage() {
     return resultado.sort((a, b) => traduzirSigla(a.id).localeCompare(traduzirSigla(b.id)));
   }, [idsParadasUnicas, paradasDataCompleta]);
 
+  // ==================== VALIDAÇÕES PARA EMBARQUE ====================
+  const validarEmbarque = useCallback(() => {
+    if (!origemId || !destinoId) {
+      setAlertSnackbar({
+        severity: 'warning',
+        message: 'Selecione a parada de embarque e desembarque!'
+      });
+      return false;
+    }
+
+    if (origemId === destinoId) {
+      setAlertSnackbar({
+        severity: 'warning',
+        message: 'A parada de embarque não pode ser igual à de desembarque!'
+      });
+      return false;
+    }
+
+    const ori = origemId.toLowerCase().trim();
+    const des = destinoId.toLowerCase().trim();
+    
+    let itinerarioValido = false;
+    for (const it of todosItinerarios) {
+      if (!it.paradas || !Array.isArray(it.paradas)) continue;
+      const paradas = it.paradas.map(normalizarNome);
+      const idxO = paradas.indexOf(ori);
+      const idxD = paradas.indexOf(des);
+      if (idxO !== -1 && idxD !== -1 && idxO < idxD) {
+        itinerarioValido = true;
+        break;
+      }
+    }
+
+    if (!itinerarioValido) {
+      setAlertSnackbar({
+        severity: 'error',
+        message: 'Não há itinerário que ligue estas paradas!'
+      });
+      return false;
+    }
+
+    const agora = new Date();
+    const horaAtual = agora.getHours();
+    const minutoAtual = agora.getMinutes();
+    const horaMinutoAtual = horaAtual * 60 + minutoAtual;
+    
+    const HORA_INICIO = 6 * 60;
+    const HORA_FIM = 23 * 60;
+
+    if (horaMinutoAtual < HORA_INICIO || horaMinutoAtual >= HORA_FIM) {
+      setAlertSnackbar({
+        severity: 'warning',
+        message: 'O embarque só é permitido entre 06:00 e 23:00!'
+      });
+      return false;
+    }
+
+    return true;
+  }, [origemId, destinoId, todosItinerarios, normalizarNome]);
+
+  // ==================== HANDLE BUSCA ====================
   const handleBusca = useCallback(async () => {
-    if (!origemId || !destinoId) return;
+    if (!validarEmbarque()) {
+      return;
+    }
+
     if (buscando) return;
     setBuscando(true);
     try {
@@ -995,10 +1233,13 @@ export default function HomePage() {
       const tempoAtualMin = agora.getHours() * 60 + agora.getMinutes();
       const dataAtual = agora.toISOString().slice(0, 10).replace(/-/g, '');
       const hoje = agora.toISOString().slice(0, 10);
+      
       if (cacheViagensRef.current.data !== hoje) {
         cacheViagensRef.current = { data: hoje, viagens: {} };
       }
+      
       const matchesPotenciais = [];
+      
       for (const it of todosItinerarios) {
         if (!it.paradas || !Array.isArray(it.paradas)) continue;
         const paradas = it.paradas.map(normalizarNome);
@@ -1023,27 +1264,40 @@ export default function HomePage() {
         const idxO = melhorIdxO;
         const idxD = melhorIdxD;
         if (!it.horariosaida || !Array.isArray(it.horariosaida)) continue;
+        
         for (const horario of it.horariosaida) {
           const [h, m] = horario.split(':').map(Number);
           const tempoSaidaMin = h * 60 + m;
           const duracao = Number(it.duracaoEstimada) || 60;
+          
           const tempoExpiracao = tempoSaidaMin + duracao + 15;
-          if (tempoAtualMin > tempoExpiracao) continue;
+          if (tempoAtualMin > tempoExpiracao) {
+            continue;
+          }
+          
+          if (tempoSaidaMin > tempoAtualMin + 120) {
+            continue;
+          }
+          
           if (tempoSaidaMin + (idxO * 1.5) >= tempoAtualMin - 20) {
             const tripId = `${it.id}_${horario.replace(':', '')}_${dataAtual}`;
+            let cat = Object.keys(categoriesConfig).find(c => categoriesConfig[c].includes(it.id)) || "Rota";
+            
             matchesPotenciais.push({
               it, horario, numParadas: idxD - idxO, tempoRef: tempoSaidaMin,
-              cat: Object.keys(categoriesConfig).find(c => categoriesConfig[c].includes(it.id)) || "Rota",
+              cat,
               tripId, idxO, origem: ori, destino: des, paradasLista: paradas,
             });
           }
         }
       }
+      
       if (matchesPotenciais.length === 0) {
         setOpcoesEncontradas([]);
         setBuscando(false);
         return;
       }
+      
       const matchesParaBuscar = [];
       const matchesEmCache = [];
       for (const match of matchesPotenciais) {
@@ -1053,37 +1307,73 @@ export default function HomePage() {
           matchesParaBuscar.push(match);
         }
       }
+      
       let resultadosBusca = [];
       if (matchesParaBuscar.length > 0) {
         const viagensPromises = matchesParaBuscar.map(async (match) => {
           try {
             const viagemRef = doc(db, "viagens_ativas", match.tripId);
             const snap = await getDoc(viagemRef);
-            let indice = 0;
-            if (snap.exists()) indice = snap.data().indiceParada ?? 0;
+            let indice = -1;
+            let chegouAoDestino = false;
+            
+            if (snap.exists()) {
+              const dados = snap.data();
+              indice = dados.indiceParada ?? -1;
+              chegouAoDestino = dados.chegouAoDestino || false;
+            }
+            
             cacheViagensRef.current.viagens[match.tripId] = indice;
-            return { match, indiceAtualOnibus: indice };
+            return { match, indiceAtualOnibus: indice, chegouAoDestino };
           } catch (error) {
-            cacheViagensRef.current.viagens[match.tripId] = 0;
-            return { match, indiceAtualOnibus: 0 };
+            cacheViagensRef.current.viagens[match.tripId] = -1;
+            return { match, indiceAtualOnibus: -1, chegouAoDestino: false };
           }
         });
         resultadosBusca = await Promise.all(viagensPromises);
       }
+      
       const todosResultados = [...matchesEmCache, ...resultadosBusca];
-      const matchesFiltrados = todosResultados.filter(({ match, indiceAtualOnibus }) => indiceAtualOnibus <= match.idxO).map(({ match }) => match);
+      
+      const matchesFiltrados = todosResultados
+        .filter(({ match, indiceAtualOnibus, chegouAoDestino }) => {
+          if (chegouAoDestino) return false;
+          
+          if (indiceAtualOnibus >= 0) {
+            return indiceAtualOnibus <= match.idxO;
+          }
+          
+          const [h, m] = match.horario.split(':').map(Number);
+          const tempoSaidaMin = h * 60 + m;
+          const tempoEstimadoAteUsuario = match.idxO * 2;
+          const tempoChegadaUsuario = tempoSaidaMin + tempoEstimadoAteUsuario;
+          
+          if (tempoAtualMin > tempoChegadaUsuario + 15) {
+            return false;
+          }
+          
+          return true;
+        })
+        .map(({ match }) => match);
+      
       if (matchesFiltrados.length > 0) {
         const minP = Math.min(...matchesFiltrados.map(m => m.numParadas));
-        setOpcoesEncontradas(matchesFiltrados.sort((a, b) => a.tempoRef - b.tempoRef).map(m => ({ ...m, maisRapida: m.numParadas === minP })).slice(0, 8));
+        setOpcoesEncontradas(
+          matchesFiltrados
+            .sort((a, b) => a.tempoRef - b.tempoRef)
+            .map(m => ({ ...m, maisRapida: m.numParadas === minP }))
+            .slice(0, 12)
+        );
       } else {
         setOpcoesEncontradas([]);
       }
     } catch (error) {
+      console.error("Erro na busca:", error);
       setOpcoesEncontradas([]);
     } finally {
       setBuscando(false);
     }
-  }, [origemId, destinoId, todosItinerarios, buscando, categoriesConfig, normalizarNome]);
+  }, [origemId, destinoId, todosItinerarios, buscando, categoriesConfig, normalizarNome, validarEmbarque]);
 
   useEffect(() => {
     if (opcoesEncontradas.length === 0) return;
@@ -1095,7 +1385,7 @@ export default function HomePage() {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#030303' }}>
         <CircularProgress sx={{ color: '#0845FF' }} />
-        <Typography variant="body2" color="#7C7C7C" fontWeight="500">
+        <Typography variant="body2" color="#fff" fontWeight="500">
           Obtendo sua localização...
         </Typography>
       </Box>
@@ -1210,18 +1500,25 @@ export default function HomePage() {
               <div className="aluno-container">
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mb: 2 }}>
                   <div className="screen-title" style={{ marginBottom: 0 }}>Olá, aluno!</div>
-                  <IconButton 
-                    onClick={handleLogout} 
-                    sx={{ 
-                      color: '#7C7C7C',
-                      '&:hover': { color: '#FF4444' },
-                      padding: '8px',
-                      transition: 'color 0.2s'
-                    }}
-                    title="Sair da conta"
+                  
+                  <Tooltip 
+                    title="Sair da conta" 
+                    placement="left"
+                    enterDelay={300}
+                    leaveDelay={200}
                   >
-                    <LogoutIcon sx={{ fontSize: '28px' }} />
-                  </IconButton>
+                    <IconButton 
+                      onClick={handleLogout} 
+                      sx={{ 
+                        color: '#7C7C7C',
+                        '&:hover': { color: '#FF4444' },
+                        padding: '8px',
+                        transition: 'color 0.2s'
+                      }}
+                    >
+                      <LogoutIcon sx={{ fontSize: '28px' }} />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
                 
                 <div 
@@ -1291,6 +1588,25 @@ export default function HomePage() {
                     Cardápio RU
                   </Button>
                 </div>
+
+                <Box sx={{ width: '100%', textAlign: 'center', mt: 2 }}>
+                  <Link
+                    component="button"
+                    variant="body2"
+                    onClick={() => setModalSaibaMaisOpen(true)}
+                    sx={{
+                      color: '#7C7C7C',
+                      textDecoration: 'underline',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      background: 'none',
+                      border: 'none',
+                      '&:hover': { color: '#FFFFFF' }
+                    }}
+                  >
+                    Saiba mais
+                  </Link>
+                </Box>
               </div>
             )}
 
@@ -1299,25 +1615,32 @@ export default function HomePage() {
               <>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <div className="screen-title" style={{ marginBottom: 0 }}>Horários</div>
-                  <IconButton 
-                    onClick={() => setModalParadasOpen(true)} 
-                    sx={{ 
-                      color: '#7C7C7C',
-                      '&:hover': { color: '#FFFFFF' },
-                      padding: '8px'
-                    }}
-                    title="Ver paradas"
+                  
+                  <Tooltip 
+                    title="Ver paradas" 
+                    placement="left"
+                    enterDelay={300}
+                    leaveDelay={200}
                   >
-                    <img 
-                      src="/paradas.svg" 
-                      alt="Paradas" 
-                      style={{ 
-                        width: '32px', 
-                        height: '32px',
-                        filter: 'brightness(0) saturate(100%) invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(85%)'
+                    <IconButton 
+                      onClick={() => setModalParadasOpen(true)} 
+                      sx={{ 
+                        color: '#7C7C7C',
+                        '&:hover': { color: '#FFFFFF' },
+                        padding: '8px'
                       }}
-                    />
-                  </IconButton>
+                    >
+                      <img 
+                        src="/paradas.svg" 
+                        alt="Paradas" 
+                        style={{ 
+                          width: '32px', 
+                          height: '32px',
+                          filter: 'brightness(0) saturate(100%) invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(85%)'
+                        }}
+                      />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
                 
                 <Tabs 
@@ -1375,38 +1698,59 @@ export default function HomePage() {
             )}
 
             <div className="bottom-nav-floating">
-              <button 
-                className={`nav-icon-btn ${modo === 'embarcar' ? 'active' : ''}`} 
-                onClick={() => setModo('embarcar')}
+              <Tooltip 
+                title="Embarque" 
+                placement="top"
+                enterDelay={300}
+                leaveDelay={200}
               >
-                <img 
-                  src={modo === 'embarcar' ? '/busativo.svg' : '/businativo.svg'} 
-                  alt="Ônibus" 
-                  className="nav-icon-bus" 
-                />
-              </button>
+                <button 
+                  className={`nav-icon-btn ${modo === 'embarcar' ? 'active' : ''}`} 
+                  onClick={() => setModo('embarcar')}
+                >
+                  <img 
+                    src={modo === 'embarcar' ? '/busativo.svg' : '/businativo.svg'} 
+                    alt="Embarque" 
+                    className="nav-icon-bus" 
+                  />
+                </button>
+              </Tooltip>
               
-              <button 
-                className={`nav-icon-btn ${modo === 'aluno' ? 'active' : ''}`} 
-                onClick={() => setModo('aluno')}
+              <Tooltip 
+                title="Perfil" 
+                placement="top"
+                enterDelay={300}
+                leaveDelay={200}
               >
-                <img 
-                  src={modo === 'aluno' ? '/perfilativo.svg' : '/perfilinativo.svg'} 
-                  alt="Perfil" 
-                  className="nav-icon-profile" 
-                />
-              </button>
+                <button 
+                  className={`nav-icon-btn ${modo === 'aluno' ? 'active' : ''}`} 
+                  onClick={() => setModo('aluno')}
+                >
+                  <img 
+                    src={modo === 'aluno' ? '/perfilativo.svg' : '/perfilinativo.svg'} 
+                    alt="Perfil" 
+                    className="nav-icon-profile" 
+                  />
+                </button>
+              </Tooltip>
               
-              <button 
-                className={`nav-icon-btn ${modo === 'verificar' ? 'active' : ''}`} 
-                onClick={() => setModo('verificar')}
+              <Tooltip 
+                title="Rotas" 
+                placement="top"
+                enterDelay={300}
+                leaveDelay={200}
               >
-                <img 
-                  src={modo === 'verificar' ? '/rotativo.svg' : '/rotainativo.svg'} 
-                  alt="Rotas" 
-                  className="nav-icon-route" 
-                />
-              </button>
+                <button 
+                  className={`nav-icon-btn ${modo === 'verificar' ? 'active' : ''}`} 
+                  onClick={() => setModo('verificar')}
+                >
+                  <img 
+                    src={modo === 'verificar' ? '/rotativo.svg' : '/rotainativo.svg'} 
+                    alt="Rotas" 
+                    className="nav-icon-route" 
+                  />
+                </button>
+              </Tooltip>
             </div>
           </div>
 
@@ -1448,6 +1792,28 @@ export default function HomePage() {
         onClose={() => setModalParadasOpen(false)} 
         paradasComEndereco={paradasComEndereco}
       />
+
+      <ModalSaibaMais
+        open={modalSaibaMaisOpen}
+        onClose={() => setModalSaibaMaisOpen(false)}
+      />
+
+      {/* SNACKBAR DE ALERTA */}
+      <Snackbar
+        open={!!alertSnackbar}
+        autoHideDuration={4000}
+        onClose={() => setAlertSnackbar(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ mt: 10 }}
+      >
+        <Alert 
+          onClose={() => setAlertSnackbar(null)} 
+          severity={alertSnackbar?.severity || 'info'} 
+          sx={{ width: '100%', fontWeight: 'bold' }}
+        >
+          {alertSnackbar?.message}
+        </Alert>
+      </Snackbar>
     </ThemeProvider>
   );
 }

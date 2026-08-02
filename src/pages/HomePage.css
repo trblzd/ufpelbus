@@ -827,3 +827,41 @@
     padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
   }
 }
+
+
+
+
+
+/* Impede seleção de texto e salvamento de imagens */
+.nav-icon-btn img,
+.aluno-upload-area img,
+.paradas-icon-btn img {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* IE/Edge */
+  user-select: none;         /* Padrão */
+  
+  -webkit-touch-callout: none; /* iOS - evita menu de contexto */
+  -webkit-user-drag: none;     /* Chrome/Safari - evita arrastar */
+  -khtml-user-drag: none;      /* Konqueror */
+  -moz-user-drag: none;        /* Firefox */
+  -o-user-drag: none;          /* Opera */
+  
+  pointer-events: none;        /* Evita interações com a imagem diretamente */
+  draggable: false;            /* Atributo HTML5 */
+}
+
+/* Evita menu de contexto em todos os ícones e botões */
+.nav-icon-btn,
+.icon-button-no-save {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Impede o menu de contexto ao clicar com botão direito */
+img,
+.nav-icon-btn img,
+button img {
+  pointer-events: none;
+}

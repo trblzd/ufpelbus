@@ -51,6 +51,12 @@ const distanciaPontoPolilinha = (p, polilinha) => {
   return minDist;
 };
 
+const formatarTempo = (minutos) => {
+  if (minutos === null || minutos === undefined) return null;
+  if (minutos < 1) return "agora mesmo";
+  if (minutos === 1) return "1 minuto";
+  return `${minutos} minutos`;
+};
 /**
  * Encontra o melhor índice do destino considerando múltiplas ocorrências
  */

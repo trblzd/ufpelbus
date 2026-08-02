@@ -489,12 +489,24 @@ export default function MainPage({
   const progressoEmbarque = useMemo(() => statusEmbarqueAuto !== 'proximo' || !tempoRestante ? 0 : ((TEMPO_CONFIRMACAO_MS - tempoRestante) / TEMPO_CONFIRMACAO_MS) * 100, [statusEmbarqueAuto, tempoRestante]);
 
   // ==================== TEXTO DA ESTIMATIVA ====================
+const formatarTempo = (minutos) => {
+    if (minutos === null || minutos === undefined) return "--";
+    if (minutos < 1) return "agora mesmo";
+    if (minutos === 1) return "1 min";
+    return `${minutos} min`;
+  };
+
   const estimativaTexto = useMemo(() => {
     if (carregandoTempo) return "Calculando...";
-    if (statusFluxo === 'inicial' && tempoParaOnibusChegar) return `${tempoParaOnibusChegar.minutos} min`;
-    if (statusFluxo !== 'inicial' && tempoAteDestino) return `${tempoAteDestino.minutos} min`;
+    if (statusFluxo === 'inicial' && tempoParaOnibusChegar) {
+      return formatarTempo(tempoParaOnibusChegar.minutos);
+    }
+    if (statusFluxo !== 'inicial' && tempoAteDestino) {
+      return formatarTempo(tempoAteDestino.minutos);
+    }
     return "--";
   }, [carregandoTempo, statusFluxo, tempoParaOnibusChegar, tempoAteDestino]);
+  
 
   // ==================== RENDER DOS TRAÇOS DO MAPA COM GRADIENTE ====================
   const renderGradiente = () => {
