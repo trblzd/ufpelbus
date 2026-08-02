@@ -1,17 +1,52 @@
 // public/sw.js
 const CACHE_NAME = "busepel-v4";
 
+// Recursos para cache offline (opcional)
+const FILES_TO_CACHE = [
+  "/",
+  "/index.html",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/favicon.ico",
+];
+
+// Instalação - cache recursos estáticos
 self.addEventListener("install", (event) => {
-  console.log("[SW] Instalado");
+  console.log("[SW] Instalando...");
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log("[SW] Cacheando recursos...");
+      return cache.addAll(FILES_TO_CACHE);
+    }),
+  );
   self.skipWaiting();
 });
 
+// Ativação - limpa caches antigos
+self.addEventListener("activate", (event) => {
+  console.log("[SW] Ativando...");
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cache) => {
+          if (cache !== CACHE_NAME) {
+            console.log("[SW] Removendo cache antigo:", cache);
+            return caches.delete(cache);
+          }
+        }),
+      );
+    }),
+  );
+  self.clients.claim();
+});
+
+// Interceptação de requisições
 self.addEventListener("fetch", (event) => {
   const url = event.request.url;
 
-  // IGNORA COMPLETAMENTE requisições de extensões
+  // IGNORA extensões do navegador
   if (url.startsWith("chrome-extension://")) {
-    return; // Não faz nada, deixa o navegador lidar
+    return;
   }
 
   // Ignora métodos que não são GET
@@ -23,28 +58,44 @@ self.addEventListener("fetch", (event) => {
   if (
     url.includes("firebase") ||
     url.includes("firestore") ||
-    url.includes("googleapis")
+    url.includes("googleapis") ||
+    url.includes("basemaps.cartocdn")
   ) {
     return;
   }
 
-  // Para navegação (páginas) - apenas fallback offline
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match("/index.html");
-        return cached || new Response("Página offline", { status: 503 });
-      }),
-    );
-    return;
-  }
+  // Estratégia: Cache First para recursos estáticos
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
 
-  // Para outros recursos, busca da rede normalmente
-  event.respondWith(fetch(event.request));
-});
+      // Fallback para rede
+      return fetch(event.request)
+        .then((response) => {
+          // Cache apenas para recursos válidos
+          if (
+            !response ||
+            response.status !== 200 ||
+            response.type !== "basic"
+          ) {
+            return response;
+          }
 
-self.addEventListener("activate", (event) => {
-  console.log("[SW] Ativado");
-  event.waitUntil(clients.claim());
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+
+          return response;
+        })
+        .catch(() => {
+          // Fallback offline para navegação
+          if (event.request.mode === "navigate") {
+            return caches.match("/index.html");
+          }
+        });
+    }),
+  );
 });
