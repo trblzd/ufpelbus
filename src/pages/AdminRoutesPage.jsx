@@ -20,6 +20,7 @@ import {
   InputAdornment,
   Stack,
   Alert,
+  Snackbar,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
@@ -42,10 +43,13 @@ export default function AdminRoutesPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [rotasStatus, setRotasStatus] = useState({});
+  const [error, setError] = useState(null);
+  const [snackbar, setSnackbar] = useState(null);
 
   useEffect(() => {
     const carregarItinerarios = async () => {
       setLoading(true);
+      setError(null);
       try {
         const snap = await getDocs(collection(db, "itinerarios"));
         const lista = [];
@@ -58,9 +62,12 @@ export default function AdminRoutesPage() {
           });
         }
         setItinerarios(lista);
+        // Aguardar a verificação de status
         await verificarStatusRotas(lista);
-      } catch (error) {
-        console.error("Erro ao carregar itinerários:", error);
+      } catch (err) {
+        console.error("Erro ao carregar itinerários:", err);
+        setError("Não foi possível carregar os itinerários. Tente novamente.");
+        setSnackbar({ severity: 'error', message: 'Erro ao carregar dados.' });
       } finally {
         setLoading(false);
       }
@@ -71,6 +78,7 @@ export default function AdminRoutesPage() {
   
   const verificarStatusRotas = async (itinerariosList) => {
     const status = {};
+    let erroOcorreu = false;
     
     for (const it of itinerariosList) {
       if (!it.paradas) continue;
@@ -92,6 +100,8 @@ export default function AdminRoutesPage() {
           }
         } catch (err) {
           console.error(`Erro ao verificar ${docId}:`, err);
+          erroOcorreu = true;
+          // Não interrompe o loop
         }
       }
       
@@ -103,6 +113,9 @@ export default function AdminRoutesPage() {
     }
     
     setRotasStatus(status);
+    if (erroOcorreu) {
+      setSnackbar({ severity: 'warning', message: 'Alguns trechos não puderam ser verificados.' });
+    }
   };
   
   const filteredItinerarios = itinerarios.filter(it => 
@@ -135,6 +148,12 @@ export default function AdminRoutesPage() {
             Cada trecho entre paradas pode ter sua própria geometria personalizada.
           </Typography>
           
+          {error && (
+            <Alert severity="error" sx={{ mb: 2, flexShrink: 0 }}>
+              {error}
+            </Alert>
+          )}
+          
           <TextField
             fullWidth
             size="small"
@@ -153,7 +172,7 @@ export default function AdminRoutesPage() {
             }}
           />
           
-          {/* LISTA COM SCROLL - CORREÇÃO AQUI */}
+          {/* LISTA COM SCROLL */}
           <Box sx={{ 
             flex: 1, 
             overflowY: 'auto', 
@@ -161,55 +180,55 @@ export default function AdminRoutesPage() {
             minHeight: 0,
             mb: 3
           }}>
-            <List>
-              {filteredItinerarios.map((it) => {
-                const status = rotasStatus[it.id] || { completos: 0, total: 0, percentual: 0 };
-                const isComplete = status.percentual === 100;
-                const hasSome = status.completos > 0;
-                
-                return (
-                  <ListItem
-                    key={it.id}
-                    disablePadding
-                    secondaryAction={
-                      <IconButton
-                        edge="end"
-                        onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}
-                        color="primary"
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    }
-                  >
-                    <ListItemButton onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}>
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <Typography variant="subtitle1" fontWeight="bold">
-                              {it.id.toUpperCase()}
-                            </Typography>
-                            {isComplete ? (
-                              <Chip size="small" icon={<CheckCircleIcon />} label="Completo" color="success" />
-                            ) : hasSome ? (
-                              <Chip size="small" label={`${Math.round(status.percentual)}%`} color="warning" />
-                            ) : (
-                              <Chip size="small" icon={<ErrorIcon />} label="Sem rotas" color="default" />
-                            )}
-                          </Stack>
-                        }
-                        secondary={`${it.paradasCount} paradas | ${status.completos}/${status.total} trechos com rota`}
-                        secondaryTypographyProps={{ variant: 'caption' }}
-                      />
-                    </ListItemButton>
-                  </ListItem>
-                );
-              })}
-            </List>
-            
-            {filteredItinerarios.length === 0 && (
+            {filteredItinerarios.length === 0 ? (
               <Alert severity="info" sx={{ mt: 2 }}>
                 Nenhum itinerário encontrado.
               </Alert>
+            ) : (
+              <List>
+                {filteredItinerarios.map((it) => {
+                  const status = rotasStatus[it.id] || { completos: 0, total: 0, percentual: 0 };
+                  const isComplete = status.percentual === 100;
+                  const hasSome = status.completos > 0;
+                  
+                  return (
+                    <ListItem
+                      key={it.id}
+                      disablePadding
+                      secondaryAction={
+                        <IconButton
+                          edge="end"
+                          onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}
+                          color="primary"
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      }
+                    >
+                      <ListItemButton onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}>
+                        <ListItemText
+                          primary={
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Typography variant="subtitle1" fontWeight="bold">
+                                {it.id.toUpperCase()}
+                              </Typography>
+                              {isComplete ? (
+                                <Chip size="small" icon={<CheckCircleIcon />} label="Completo" color="success" />
+                              ) : hasSome ? (
+                                <Chip size="small" label={`${Math.round(status.percentual)}%`} color="warning" />
+                              ) : (
+                                <Chip size="small" icon={<ErrorIcon />} label="Sem rotas" color="default" />
+                              )}
+                            </Stack>
+                          }
+                          secondary={`${it.paradasCount} paradas | ${status.completos}/${status.total} trechos com rota`}
+                          secondaryTypographyProps={{ variant: 'caption' }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
             )}
           </Box>
           
@@ -244,6 +263,17 @@ export default function AdminRoutesPage() {
           </Button>
         </Paper>
       </Container>
+
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSnackbar(null)} severity={snackbar?.severity} sx={{ width: '100%' }}>
+          {snackbar?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

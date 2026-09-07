@@ -53,11 +53,15 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
   const intervalRef = useRef(null);
 
   // Calcula o horário estimado de chegada baseado no horário atual
-  const calcularHorarioChegada = (minutos) => {
-    if (!minutos || minutos < 0) return null;
-    const agora = new Date();
-    agora.setMinutes(agora.getMinutes() + minutos);
-    return agora.toTimeString().slice(0, 5);
+ const calcularHorarioChegada = (minutosEstimados) => {
+    if (!minutosEstimados || minutosEstimados < 0) return null;
+    if (!opt?.horario) return null;
+
+    const [horas, minutos] = opt.horario.split(':').map(Number);
+    const dataSaida = new Date();
+    dataSaida.setHours(horas, minutos, 0, 0);
+    dataSaida.setMinutes(dataSaida.getMinutes() + minutosEstimados);
+    return dataSaida.toTimeString().slice(0, 5);
   };
 
   useEffect(() => {

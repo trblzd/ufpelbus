@@ -599,7 +599,7 @@ const formatarTempo = (minutos) => {
       {/* MAPA AO FUNDO */}
       <div className="map-container-full">
         <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2zia_1_7597566517a627144c3ece15" />
           {renderGradiente()}
 
           {posicaoOnibus && viagemAtiva && !modoApenasConsulta && (

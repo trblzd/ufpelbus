@@ -188,7 +188,10 @@ export const useRastreamento = ({
 
       const viagemAtivaDados = viagemSnap.data();
 
+      // ========== VERIFICAÇÃO DE CHEGADA AO DESTINO (via flag) ==========
       if (viagemAtivaDados.chegouAoDestino) {
+        await liberarUsuario(uid);
+        onExpulsar("destino");
         return;
       }
 
@@ -292,6 +295,11 @@ export const useRastreamento = ({
           distAteDestino <= DIST_CHEGADA_METROS &&
           velKmh < 3
         ) {
+          // Marca a viagem como concluída para evitar múltiplas execuções
+          await updateDoc(viagemRef, {
+            chegouAoDestino: true,
+            atualizadoEm: serverTimestamp(),
+          });
           if (isRastreador) await promoverProximoRastreador(viagemRef);
           await liberarUsuario(uid);
           onExpulsar("destino");
@@ -304,6 +312,10 @@ export const useRastreamento = ({
           distAteDestino <= DIST_CHEGADA_METROS &&
           velKmh < 3
         ) {
+          await updateDoc(viagemRef, {
+            chegouAoDestino: true,
+            atualizadoEm: serverTimestamp(),
+          });
           if (isRastreador) await promoverProximoRastreador(viagemRef);
           await liberarUsuario(uid);
           onExpulsar("destino");
@@ -349,10 +361,10 @@ export const useRastreamento = ({
           const coordsA = paradasData[paradasLista[i]]?.location;
           const coordsB = paradasData[paradasLista[i + 1]]?.location;
           if (coordsA && coordsB) {
-            const aLat = Number(coordsA.latitude || coordsA._lat);
-            const aLng = Number(coordsA.longitude || coordsA._long);
-            const bLat = Number(coordsB.latitude || coordsB._lat);
-            const bLng = Number(coordsB.longitude || coordsB._long);
+            let aLat = Number(coordsA.latitude || coordsA._lat);
+            let aLng = Number(coordsA.longitude || coordsA._long);
+            let bLat = Number(coordsB.latitude || coordsB._lat);
+            let bLng = Number(coordsB.longitude || coordsB._long);
             const dist = distanciaAteSegmento(
               pos.lat,
               pos.lng,
@@ -463,7 +475,6 @@ export const useRastreamento = ({
       }
 
       // ========== SALVAMENTO DE TELEMETRIA ==========
-      // 5 segundos para rastreador, 15 segundos para passageiro
       const throttleTime = isRastreador
         ? THROTTLE_RASTREADOR_MS
         : THROTTLE_PASSAGEIRO_MS;

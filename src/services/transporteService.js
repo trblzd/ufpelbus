@@ -162,7 +162,7 @@ export const getTempoEstimadoTrecho = async (
   try {
     const snap = await getDoc(rotaRef);
     if (!snap.exists()) {
-      return 180;
+      return 180; // fallback de 3 minutos
     }
 
     const dados = snap.data();
