@@ -1,48 +1,47 @@
-# 🚌 busepel - Rastreamento de Ônibus Universitário em Tempo Real
+# Busepel
 
-[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite)](https://vitejs.dev/)
-[![Firebase](https://img.shields.io/badge/Firebase-10.0-FFCA28?logo=firebase)](https://firebase.google.com/)
-[![Material-UI](https://img.shields.io/badge/MUI-5.0-007FFF?logo=mui)](https://mui.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+Aplicativo de rastreamento colaborativo do transporte de apoio da Universidade Federal de Pelotas. Estudantes acompanham em tempo real a posição do ônibus, recebem estimativas de chegada e votam na lotação.
 
-## 📱 Sobre o Projeto
+## O que resolve
 
-**busepel** é um aplicativo web progressivo (PWA) que permite aos estudantes da Universidade Federal de Pelotas (UFPel) rastrear os ônibus universitários em tempo real. O sistema utiliza tecnologia colaborativa onde os próprios passageiros se tornam rastreadores, enviando a localização do veículo através de seus smartphones.
+Saber onde o ônibus está e quanto falta para ele chegar. O primeiro passageiro que embarca vira o "rastreador" e compartilha o GPS do celular; os demais veem a posição em tempo real no mapa.
 
-### 🎯 Problema que Resolve
+## Stack
 
-- **Incerteza na espera**: Estudantes não sabem quando o próximo ônibus vai chegar
-- **Falta de informação**: Horários fixos não refletem atrasos ou adiantamentos
-- **Superlotação**: Não há como saber se o ônibus está lotado antes de chegar
-- **Rotas complexas**: Múltiplas linhas com trajetos similares causam confusão
+- **Frontend:** React 18 + Vite
+- **UI:** Material UI + CSS customizado
+- **Mapas:** Leaflet + React-Leaflet (tiles CartoDB Dark)
+- **Backend:** Firebase (Firestore + Auth + Cloud Functions)
+- **Roteamento:** React Router v6
+- **Snapping de rotas:** OSRM
+- **PWA:** instalável no celular
 
-### ✨ Solução
+## Funcionalidades
 
-- **Rastreamento colaborativo**: Passageiros contribuem com a localização em tempo real
-- **Previsão inteligente**: Baseada em dados históricos de viagem
-- **Informação de lotação**: Votação coletiva sobre ocupação do veículo
-- **Interface intuitiva**: Foco em simplicidade e usabilidade
+**Passageiros**
 
-## 🚀 Funcionalidades Principais
+- Login via e-mail/senha
+- Embarque colaborativo (primeiro a embarcar vira rastreador)
+- Localização do ônibus em tempo real no mapa
+- Estimativa de chegada baseada em tempos históricos
+- Votação de lotação (vazio / médio / lotado)
+- Paradas favoritas e apelidos personalizados (sincronizados na nuvem)
+- Carteirinha do Cobalto (somente local)
 
-### Para Estudantes
-- 🗺️ **Mapa interativo** com rotas coloridas e paradas
-- 📍 **Embarque automático** - Detecta quando você está na parada
-- 🚏 **Paradas favoritas** - Marque seus pontos de embarque preferidos
-- ✏️ **Personalização de nomes** - Renomeie paradas como preferir
-- 📊 **Lotação em tempo real** - Vazio, Médio ou Lotado
-- ⏱️ **Previsão de chegada** - Calculada com base em dados históricos
-- 🔄 **Recuperação de sessão** - Volte à viagem mesmo após fechar o app
+**Administradores**
 
-### Para Administradores
-- 🛠️ **Editor de rotas** - Interface gráfica para desenhar trajetos
-- 🔗 **Compartilhamento de trechos** - Reutilize rotas entre diferentes linhas
-- 🎨 **Sistema de gradiente** - Visualização colorida por trecho
-- 📐 **Snap to road** - Alinhamento automático às ruas (OSRM)
+- Editor visual de rotas com desenho sobre mapa
+- Alinhamento automático às ruas via OSRM
+- Compartilhamento de trechos entre itinerários
+- Status de completude das rotas por linha
 
-### Tecnologias de Backend
-- 👑 **Sistema de rastreador principal** - Um passageiro por vez envia GPS
-- 🔄 **Reserva automática** - Próximo passageiro assume quando o atual desce
-- 🧠 **Aprendizado coletivo** - Tempos de trecho melhoram com uso
-- 💾 **Cache multi-camada** - Redução de 70% nas requisições ao Firebase
+**Automatizações**
+
+- Detecção automática de paradas por GPS
+- Expulsão ao chegar no destino
+- Aprendizado de tempos por trecho e faixa horária
+- Detecção de desvio de rota
+- Sucessão automática de rastreador
+- Reset diário de viagens ativas (Cloud Function às 03:00 BRT)
+
+## Estrutura

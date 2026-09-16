@@ -813,3 +813,63 @@ export const carregarRotasAprendidas = async (itinerarioId) => {
     return {};
   }
 };
+
+export const calcularTempoParaOnibusChegarAteVocePorPosicao = (
+  viagemAtiva,
+  itinerario,
+  paradaUsuario,
+  paradasData,
+) => {
+  if (!viagemAtiva || !paradaUsuario) return null;
+  if (viagemAtiva.lat == null || viagemAtiva.lng == null) return null;
+
+  const paradaKey = paradaUsuario.toLowerCase().trim();
+  const infoParada = paradasData?.[paradaKey];
+  if (!infoParada?.location) return null;
+
+  let latP = Number(infoParada.location.latitude || infoParada.location._lat);
+  let lngP = Number(infoParada.location.longitude || infoParada.location._long);
+  if (isNaN(latP) || isNaN(lngP)) return null;
+
+  // Normaliza sinal (Pelotas fica no hemisfério Sul/Oeste)
+  latP = latP > 0 ? latP * -1 : latP;
+  lngP = lngP > 0 ? lngP * -1 : lngP;
+
+  const distanciaMetros = calculateDistance(
+    viagemAtiva.lat,
+    viagemAtiva.lng,
+    latP,
+    lngP,
+  );
+
+  // Ônibus muito perto → considera "aqui"
+  if (distanciaMetros < 30) {
+    return {
+      minutos: 0,
+      segundos: 0,
+      status: "aqui",
+      mensagem: "O ônibus está na sua parada!",
+      distanciaMetros,
+      baseadoEmPosicao: true,
+    };
+  }
+
+  // Usa velocidade do ônibus se válida; senão assume 25 km/h urbano
+  let velocidadeKmh = Number(viagemAtiva.velocidade) || 0;
+  if (velocidadeKmh < 8 || velocidadeKmh > 80) velocidadeKmh = 25;
+
+  const minutos = Math.max(
+    1,
+    Math.ceil((distanciaMetros / 1000 / velocidadeKmh) * 60),
+  );
+
+  return {
+    minutos,
+    segundos: minutos * 60,
+    status: "chegando",
+    mensagem: `O ônibus chega em ~${minutos} min`,
+    distanciaMetros,
+    velocidadeKmh,
+    baseadoEmPosicao: true,
+  };
+};

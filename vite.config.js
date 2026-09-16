@@ -5,13 +5,12 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Permite que o ngrok acesse o servidor local
-    allowedHosts: [
-      "foam-sensitive-goldmine.ngrok-free.dev",
-      ".ngrok-free.app",
-      ".ngrok-free.dev",
-    ],
     host: true,
+    port: 5173,
     strictPort: true,
+    hmr: {
+      host: "localhost",
+      protocol: "ws",
+    },
   },
 });
