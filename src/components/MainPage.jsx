@@ -199,56 +199,56 @@ export default function MainPage({
     }
   }, [itinerario, horario, destino, paradasData, modoApenasConsulta, statusFluxo]);
 
-const calcularEstimativas = useCallback(async () => {
-  if (!viagemAtiva || !itinerario || !horario || modoApenasConsulta) return;
-  if (!origem && !destino) return;
+  const calcularEstimativas = useCallback(async () => {
+    if (!viagemAtiva || !itinerario || !horario || modoApenasConsulta) return;
+    if (!origem && !destino) return;
 
-  setCarregandoTempo(true);
-  try {
-    if (statusFluxo === 'inicial' && origem) {
-      let resultado = null;
+    setCarregandoTempo(true);
+    try {
+      if (statusFluxo === 'inicial' && origem) {
+        let resultado = null;
 
-      // ✅ NOVO: se o ônibus já reportou posição, usa distância ônibus→parada
-      if (
-        viagemAtiva.lat != null &&
-        viagemAtiva.lng != null &&
-        paradasData &&
-        Object.keys(paradasData).length > 0
-      ) {
-        resultado = calcularTempoParaOnibusChegarAteVocePorPosicao(
-          viagemAtiva,
-          itinerario,
-          origem,
-          paradasData,
+        // ✅ Se o ônibus já reportou posição, usa distância ônibus→parada
+        if (
+          viagemAtiva.lat != null &&
+          viagemAtiva.lng != null &&
+          paradasData &&
+          Object.keys(paradasData).length > 0
+        ) {
+          resultado = calcularTempoParaOnibusChegarAteVocePorPosicao(
+            viagemAtiva,
+            itinerario,
+            origem,
+            paradasData,
+          );
+        }
+
+        // Fallback: método antigo (índice + tempos aprendidos)
+        if (!resultado) {
+          resultado = await calcularTempoParaOnibusChegarAteVoce(
+            viagemAtiva, itinerario, origem, horario
+          );
+        }
+
+        if (resultado) {
+          setTempoParaOnibusChegar(resultado);
+          setTempoAteDestino(null);
+        }
+      } else if (statusFluxo !== 'inicial' && destino) {
+        const resultado = await calcularTempoRestanteAteDestino(
+          viagemAtiva, itinerario, destino, horario
         );
+        if (resultado) {
+          setTempoAteDestino(resultado);
+          setTempoParaOnibusChegar(null);
+        }
       }
-
-      // Fallback: método antigo (índice + tempos aprendidos)
-      if (!resultado) {
-        resultado = await calcularTempoParaOnibusChegarAteVoce(
-          viagemAtiva, itinerario, origem, horario
-        );
-      }
-
-      if (resultado) {
-        setTempoParaOnibusChegar(resultado);
-        setTempoAteDestino(null);
-      }
-    } else if (statusFluxo !== 'inicial' && destino) {
-      const resultado = await calcularTempoRestanteAteDestino(
-        viagemAtiva, itinerario, destino, horario
-      );
-      if (resultado) {
-        setTempoAteDestino(resultado);
-        setTempoParaOnibusChegar(null);
-      }
+    } catch (error) {
+      console.warn(error);
+    } finally {
+      setCarregandoTempo(false);
     }
-  } catch (error) {
-    console.warn(error);
-  } finally {
-    setCarregandoTempo(false);
-  }
-}, [viagemAtiva, itinerario, horario, origem, destino, statusFluxo, modoApenasConsulta, paradasData]);
+  }, [viagemAtiva, itinerario, horario, origem, destino, statusFluxo, modoApenasConsulta, paradasData]);
 
   useEffect(() => {
     if (itinerario && horario && origem && Object.keys(paradasData).length > 0) {
@@ -275,53 +275,49 @@ const calcularEstimativas = useCallback(async () => {
   }, [viagemAtiva, modoApenasConsulta, calcularHorarioChegadaOnibus, calcularHorarioDestino, calcularEstimativas]);
 
   const handleFechar = useCallback(async () => {
-  try {
-    const usuario = auth.currentUser;
-    if (usuario && tripId && statusFluxo !== 'inicial' && statusFluxo !== 'expulso') {
-      const viagemRef = doc(db, "viagens_ativas", tripId);
-      const snap = await getDoc(viagemRef);
+    try {
+      const usuario = auth.currentUser;
+      if (usuario && tripId && statusFluxo !== 'inicial' && statusFluxo !== 'expulso') {
+        const viagemRef = doc(db, "viagens_ativas", tripId);
+        const snap = await getDoc(viagemRef);
 
-      if (snap.exists()) {
-        const dados = snap.data();
-        // Se era o rastreador → promove o próximo (ou deixa null)
-        if (dados.rastreadorAtual?.uid === usuario.uid) {
-          if (dados.proximoRastreador) {
+        if (snap.exists()) {
+          const dados = snap.data();
+          if (dados.rastreadorAtual?.uid === usuario.uid) {
+            if (dados.proximoRastreador) {
+              await updateDoc(viagemRef, {
+                rastreadorAtual: dados.proximoRastreador,
+                proximoRastreador: null,
+                atualizadoEm: serverTimestamp(),
+              });
+            } else {
+              await updateDoc(viagemRef, {
+                rastreadorAtual: null,
+                atualizadoEm: serverTimestamp(),
+              });
+            }
+          } else if (dados.proximoRastreador?.uid === usuario.uid) {
             await updateDoc(viagemRef, {
-              rastreadorAtual: dados.proximoRastreador,
               proximoRastreador: null,
-              atualizadoEm: serverTimestamp(),
-            });
-          } else {
-            await updateDoc(viagemRef, {
-              rastreadorAtual: null,
               atualizadoEm: serverTimestamp(),
             });
           }
         }
-        // Se era o próximo → remove marcação
-        else if (dados.proximoRastreador?.uid === usuario.uid) {
-          await updateDoc(viagemRef, {
-            proximoRastreador: null,
-            atualizadoEm: serverTimestamp(),
-          });
-        }
+
+        await updateDoc(doc(db, "usuarios", usuario.uid), {
+          viagemAtualId: null,
+        });
       }
-
-      await updateDoc(doc(db, "usuarios", usuario.uid), {
-        viagemAtualId: null,
-      });
+    } catch (e) {
+      console.warn("Erro ao sair da viagem:", e);
     }
-  } catch (e) {
-    console.warn("Erro ao sair da viagem:", e);
-  }
 
-  // Limpa estado local e volta
-  clearStatusFluxo();
-  clearIsRastreador();
-  clearViagemId();
-  clearGpsPassageiro();
-  voltar();
-}, [tripId, statusFluxo, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro, voltar]);
+    clearStatusFluxo();
+    clearIsRastreador();
+    clearViagemId();
+    clearGpsPassageiro();
+    voltar();
+  }, [tripId, statusFluxo, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro, voltar]);
 
   // ==================== FUNÇÕES DE INTERAÇÃO E EMBARQUE ====================
   const handleConfirmarEmbarque = useCallback(async () => {
@@ -477,32 +473,97 @@ const calcularEstimativas = useCallback(async () => {
     }
   }, [position, paradasData, origem, getCoords]);
 
-    const handleExpulsar = useCallback(async (motivo) => {
-      console.log(`[Expulsão] Motivo: ${motivo}`);
-      
-      // Se foi expulso por destino, limpa a viagem do Firebase
-      if (motivo === 'destino' && tripId) {
-        try {
-          // Marca a viagem como concluída
-          await updateDoc(doc(db, "viagens_ativas", tripId), {
-            status: 'concluida',
-            horarioConclusao: serverTimestamp(),
-          });
-        } catch (error) {
-          console.warn('Erro ao concluir viagem:', error);
-        }
+  // ==================== EXPULSÃO DE VIAGEM ====================
+  const handleExpulsar = useCallback(async (motivo) => {
+    // ✅ Guarda contra expulsão dupla (o hook pode chamar + este useEffect abaixo pode chamar)
+    if (statusFluxo === 'expulso') {
+      console.log('[Expulsão] Ignorada — usuário já foi expulso.');
+      return;
+    }
+
+    console.log(`[Expulsão] Motivo: ${motivo}`);
+
+    if (motivo === 'destino' && tripId) {
+      try {
+        await updateDoc(doc(db, "viagens_ativas", tripId), {
+          status: 'concluida',
+          horarioConclusao: serverTimestamp(),
+        });
+      } catch (error) {
+        console.warn('Erro ao concluir viagem:', error);
       }
-      
-      setStatusFluxo('expulso');
-      setTimeout(() => {
-        // Limpa todos os dados persistentes
-        clearStatusFluxo();
-        clearIsRastreador();
-        clearViagemId();
-        clearGpsPassageiro();
-        voltar();
-      }, 3000);
-    }, [voltar, setStatusFluxo, tripId, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro]);
+    }
+
+    setStatusFluxo('expulso');
+    setTimeout(() => {
+      clearStatusFluxo();
+      clearIsRastreador();
+      clearViagemId();
+      clearGpsPassageiro();
+      voltar();
+    }, 3000);
+  }, [voltar, setStatusFluxo, tripId, statusFluxo, clearStatusFluxo, clearIsRastreador, clearViagemId, clearGpsPassageiro]);
+
+  // ============================================================
+  // ✅ NOVO: EXPULSÃO DO PASSAGEIRO AO CHEGAR NO DESTINO
+  // ============================================================
+  // Independente do GPS. Reage à mudança de `indiceParada` no
+  // Firestore: quando o ônibus chega (ou passa) do índice do
+  // destino do usuário, ele é liberado automaticamente.
+  //
+  // Isso resolve o problema do passageiro que fica preso no ônibus
+  // porque seu GPS nunca era ativado (o hook useRastreamento
+  // precisa de `ativo === true` para rodar `tick()`, e o
+  // passageiro só ativava o GPS via `onReativarGpsPassageiro`
+  // dentro do próprio `tick` — deadlock).
+  useEffect(() => {
+    if (modoApenasConsulta) return;
+    if (!viagemAtiva || !itinerario || !destino) return;
+    if (statusFluxo === 'inicial' || statusFluxo === 'expulso') return;
+
+    const paradasLista = itinerario.paradas.map((p) =>
+      (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim()
+    );
+    const destinoKey = destino.toLowerCase().trim();
+
+    const indices = [];
+    paradasLista.forEach((p, i) => {
+      if (p === destinoKey) indices.push(i);
+    });
+    if (indices.length === 0) return;
+
+    const indiceAtualOnibus = viagemAtiva.indiceParada ?? 0;
+
+    // Escolhe o primeiro índice do destino que é >= ao índice atual
+    let idxDestinoUsuario = -1;
+    for (const idx of indices) {
+      if (idx >= indiceAtualOnibus) {
+        idxDestinoUsuario = idx;
+        break;
+      }
+    }
+    if (idxDestinoUsuario === -1) idxDestinoUsuario = indices[indices.length - 1];
+
+    // Condição de expulsão:
+    //  - índice do ônibus >= índice do destino do usuário
+    //  - OU flag `chegouAoDestino` marcada pelo rastreador
+    if (
+      indiceAtualOnibus >= idxDestinoUsuario ||
+      viagemAtiva.chegouAoDestino === true
+    ) {
+      console.log(
+        `[MainPage] Usuário chegou ao destino (indiceOnibus=${indiceAtualOnibus}, idxDestino=${idxDestinoUsuario}). Expulsando...`
+      );
+      handleExpulsar('destino');
+    }
+  }, [
+    viagemAtiva,
+    itinerario,
+    destino,
+    statusFluxo,
+    modoApenasConsulta,
+    handleExpulsar,
+  ]);
 
   const handleVotarLotacao = useCallback(async (statusLot) => {
     const valores = { 'vazio': 1, 'medio': 3, 'lotado': 5 };
@@ -560,7 +621,7 @@ const calcularEstimativas = useCallback(async () => {
   const progressoEmbarque = useMemo(() => statusEmbarqueAuto !== 'proximo' || !tempoRestante ? 0 : ((TEMPO_CONFIRMACAO_MS - tempoRestante) / TEMPO_CONFIRMACAO_MS) * 100, [statusEmbarqueAuto, tempoRestante]);
 
   // ==================== TEXTO DA ESTIMATIVA ====================
-const formatarTempo = (minutos) => {
+  const formatarTempo = (minutos) => {
     if (minutos === null || minutos === undefined) return "--";
     if (minutos < 1) return "agora mesmo";
     if (minutos === 1) return "1 min";
@@ -577,17 +638,14 @@ const formatarTempo = (minutos) => {
     }
     return "--";
   }, [carregandoTempo, statusFluxo, tempoParaOnibusChegar, tempoAteDestino]);
-  
 
   // ==================== RENDER DOS TRAÇOS DO MAPA COM GRADIENTE ====================
   const renderGradiente = () => {
     if (paradasTrecho.length < 2) return null;
 
-    // Determinar índices de origem e destino
     const oriIdx = origem ? paradasTrecho.findIndex(p => p === origem.toLowerCase().trim()) : -1;
     const dstIdx = destino ? paradasTrecho.findIndex(p => p === destino.toLowerCase().trim()) : -1;
 
-    // Se não tiver origem e destino definidos, usar toda a rota
     const startIdx = (oriIdx !== -1 && dstIdx !== -1) ? oriIdx : 0;
     const endIdx = (oriIdx !== -1 && dstIdx !== -1) ? dstIdx : paradasTrecho.length - 1;
     const totalTramos = endIdx - startIdx;
@@ -610,26 +668,19 @@ const formatarTempo = (minutos) => {
         isEstimada = true;
       }
 
-      // Determinar se este trecho está entre origem e destino
       const isActiveSegment = (oriIdx !== -1 && dstIdx !== -1)
         ? (i >= oriIdx && i < dstIdx)
-        : true; // Se não tem origem/destino, mostrar toda a rota
+        : true;
 
-      // Calcular cor baseada na posição no trecho (gradiente vermelho -> verde)
       let cor = '#444444';
       let weight = 2;
       let opacity = 0.3;
 
       if (isActiveSegment) {
-        // Calcular progresso apenas nos trechos ativos
         const progresso = totalTramos > 0 ? (i - startIdx) / totalTramos : 0;
-
-        // Gradiente direto: vermelho (início) -> verde (fim)
-        // Usando interpolação linear simples entre vermelho e verde
         const r = Math.round(255 * (1 - progresso));
         const g = Math.round(255 * progresso);
-        const b = 0; // Sem azul para gradiente puro vermelho->verde
-
+        const b = 0;
         cor = `rgb(${r}, ${g}, ${b})`;
         weight = isEstimada ? 4 : 6;
         opacity = 0.5;
