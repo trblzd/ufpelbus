@@ -629,7 +629,8 @@ const ModalCardapio = ({ open, onClose }) => {
               maxWidth: '280px'
             }}
           >
-            Em breve você poderá consultar o cardápio do RU aqui!
+            Em breve você poderá consultar o cardápio do RU diretamente por aqui. <br/>
+            Por enquanto, acesse no <a href="https://cobalto.ufpel.edu.br/portal/cardapios/cardapioPublico">Cobalto</a>
           </Typography>
         </Box>
         
