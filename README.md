@@ -42,6 +42,3 @@ Saber onde o ônibus está e quanto falta para ele chegar. O primeiro passageiro
 - Aprendizado de tempos por trecho e faixa horária
 - Detecção de desvio de rota
 - Sucessão automática de rastreador
-- Reset diário de viagens ativas (Cloud Function às 03:00 BRT)
-
-## Estrutura
