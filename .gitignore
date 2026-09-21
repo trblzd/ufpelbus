@@ -22,7 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
+.firebase
 # Firebase & Secret Keys
 .env
 .env.local
