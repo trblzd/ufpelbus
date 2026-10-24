@@ -1,5 +1,5 @@
 // public/sw.js
-const CACHE_NAME = "busepel-v4";
+const CACHE_NAME = "busepel-v5";
 
 // Recursos para cache offline (opcional)
 const FILES_TO_CACHE = [

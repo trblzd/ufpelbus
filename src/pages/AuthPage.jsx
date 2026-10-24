@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail
 } from 'firebase/auth';
+import { VisibilityIcon, VisibilityOffIcon } from '../components/icons';
 import './AuthPage.css';
 
 export default function AuthPage() {
@@ -13,7 +14,9 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // ⚠️ IMPORTANTE:
   // NÃO usamos useNavigate aqui.
@@ -27,6 +30,7 @@ export default function AuthPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setInfo('');
     setError('');
     setLoading(true);
 
@@ -40,26 +44,26 @@ export default function AuthPage() {
       // O AppDataProvider detecta o login e o AppRoutes re-renderiza.
     } catch (err) {
       console.error(err);
-      let msg = 'Erro: ';
+      let msg = '';
       switch (err.code) {
         case 'auth/user-not-found':
-          msg += 'Usuário não encontrado.';
+          msg = 'Usuário não encontrado.';
           break;
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
-          msg += 'Senha incorreta.';
+          msg = 'E-mail ou senha incorretos.';
           break;
         case 'auth/email-already-in-use':
-          msg += 'E-mail já cadastrado.';
+          msg = 'E-mail já cadastrado.';
           break;
         case 'auth/invalid-email':
-          msg += 'E-mail inválido.';
+          msg = 'E-mail inválido.';
           break;
         case 'auth/weak-password':
-          msg += 'Senha fraca (mínimo 6 caracteres).';
+          msg = 'Senha fraca (mínimo 6 caracteres).';
           break;
         default:
-          msg += 'Verifique os dados informados.';
+          msg = 'Verifique os dados informados.';
       }
       setError(msg);
     } finally {
@@ -68,15 +72,17 @@ export default function AuthPage() {
   };
 
   const handleResetPassword = async () => {
+    setError('');
+    setInfo('');
     if (!email) {
-      alert('Digite seu e-mail no campo correspondente primeiro!');
+      setError('Digite seu e-mail no campo acima para recuperar a senha.');
       return;
     }
     try {
       await sendPasswordResetEmail(auth, email);
-      alert('E-mail de recuperação enviado!');
+      setInfo(`Enviamos um e-mail de recuperação para ${email}.`);
     } catch (err) {
-      alert('Erro ao enviar e-mail de recuperação.');
+      setError('Não foi possível enviar o e-mail de recuperação.');
     }
   };
 
@@ -84,23 +90,26 @@ export default function AuthPage() {
     <div className="auth-page-bg">
       <div className="auth-page-container">
 
-        {/* LOGO DO BUSEPEL CHAMANDO DO PUBLIC */}
-        <div className="auth-logo-container">
-          <img
-            src="/buslogo.svg"
-            alt="Busepel Logo"
-            className="auth-logo-svg"
-          />
-        </div>
+        <img
+          src="/buslogo.svg"
+          alt="Busepel"
+          className="auth-logo-svg"
+        />
 
-        <div className="auth-title">
-          {isLogin ? 'Entrar' : 'Cadastre-se'}
+        <div className="auth-header">
+          <h1 className="auth-title">{isLogin ? 'Entrar' : 'Criar conta'}</h1>
+          <p className="auth-subtitle">
+            {isLogin
+              ? 'Acompanhe os ônibus da UFPel em tempo real.'
+              : 'Crie sua conta para acompanhar os ônibus da UFPel.'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="auth-input-group">
-            <label className="auth-label">E-mail:</label>
+            <label className="auth-label" htmlFor="auth-email">E-mail</label>
             <input
+              id="auth-email"
               type="email"
               className="auth-input"
               value={email}
@@ -111,48 +120,58 @@ export default function AuthPage() {
           </div>
 
           <div className="auth-input-group">
-            <label className="auth-label">Senha:</label>
-            <input
-              type="password"
-              className="auth-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete={isLogin ? 'current-password' : 'new-password'}
-            />
+            <label className="auth-label" htmlFor="auth-password">Senha</label>
+            <div className="auth-password-wrapper">
+              <input
+                id="auth-password"
+                type={showPassword ? 'text' : 'password'}
+                className="auth-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <VisibilityOffIcon aria-hidden="true" /> : <VisibilityIcon aria-hidden="true" />}
+              </button>
+            </div>
           </div>
-
-          <div className="auth-divider-container">
-            <div className="auth-line"></div>
-            <div className="auth-divider-text">ou</div>
-            <div className="auth-line"></div>
-          </div>
-
-          {error && <div className="auth-error-msg">{error}</div>}
-
-          <button
-            type="submit"
-            className="auth-submit-btn"
-            disabled={loading}
-          >
-            {loading ? 'Aguarde...' : (isLogin ? 'Entrar' : 'Registrar-se')}
-          </button>
-        </form>
-
-        <div className="auth-footer-links">
-          <button
-            type="button"
-            className="auth-switch-mode-btn"
-            onClick={() => { setIsLogin(!isLogin); setError(''); }}
-          >
-            {isLogin ? 'Não tem conta? Cadastre-se' : 'Já possui uma conta? Faça Login'}
-          </button>
 
           {isLogin && (
             <button type="button" className="auth-forgot-btn" onClick={handleResetPassword}>
               Esqueceu a senha?
             </button>
           )}
+
+          {error && <div className="auth-error-msg" role="alert">{error}</div>}
+          {info && <div className="auth-info-msg" role="status">{info}</div>}
+
+          <button
+            type="submit"
+            className="auth-submit-btn"
+            disabled={loading}
+          >
+            {loading ? 'Aguarde...' : (isLogin ? 'Entrar' : 'Criar conta')}
+          </button>
+        </form>
+
+        <div className="auth-footer-links">
+          <span className="auth-footer-text">
+            {isLogin ? 'Ainda não tem conta?' : 'Já tem conta?'}
+          </span>
+          <button
+            type="button"
+            className="auth-secondary-btn"
+            onClick={() => { setIsLogin(!isLogin); setError(''); setInfo(''); }}
+          >
+            {isLogin ? 'Criar conta' : 'Entrar'}
+          </button>
         </div>
 
       </div>

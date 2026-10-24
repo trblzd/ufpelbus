@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { db } from '../services/firebase';
+import { cores } from '../theme/tokens';
+import { transicionar } from '../theme/transicoes';
 import { collection, getDocs, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import {
   Box,
@@ -35,22 +37,7 @@ import {
   InputAdornment,
   Chip,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import DrawIcon from '@mui/icons-material/Draw';
-import DeleteIcon from '@mui/icons-material/Delete';
-import SaveIcon from '@mui/icons-material/Save';
-import UndoIcon from '@mui/icons-material/Undo';
-import RedoIcon from '@mui/icons-material/Redo';
-import LayersClearIcon from '@mui/icons-material/LayersClear';
-import EditIcon from '@mui/icons-material/Edit';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
-import DragHandleIcon from '@mui/icons-material/DragHandle';
-import MapIcon from '@mui/icons-material/Map';
-import StraightenIcon from '@mui/icons-material/Straighten';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import SearchIcon from '@mui/icons-material/Search';
-import ListAltIcon from '@mui/icons-material/ListAlt';
+import { ArrowBackIcon, CheckCircleIcon, ContentCopyIcon, DeleteIcon, DragHandleIcon, DrawIcon, EditIcon, ErrorIcon, LayersClearIcon, ListAltIcon, MapIcon, RedoIcon, SaveIcon, SearchIcon, StraightenIcon, UndoIcon } from '../components/icons';
 import 'leaflet/dist/leaflet.css';
 
 import {
@@ -741,7 +728,7 @@ const buscarTrechoPorParadasAtuais = async () => {
           key={trecho.id}
           positions={positions}
           pathOptions={{
-            color: '#aaaaaa',
+            color: cores.texto2,
             weight: 3,
             opacity: 0.5,
             dashArray: '5, 5'
@@ -869,7 +856,7 @@ const buscarTrechoPorParadasAtuais = async () => {
     <Box sx={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <Paper elevation={2} sx={{ p: 2, zIndex: 1100, borderRadius: 0, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
-        <IconButton onClick={() => navigate('/admin/rotas')}>
+        <IconButton aria-label="Voltar para a lista de rotas" onClick={() => transicionar('voltar', () => navigate('/admin/rotas'))}>
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="h6" fontWeight="bold" color="primary" sx={{ flexGrow: 1 }}>
@@ -981,7 +968,7 @@ const buscarTrechoPorParadasAtuais = async () => {
               width: 320,
               position: 'relative',
               height: '100%',
-              borderRight: '1px solid #e0e0e0',
+              borderRight: `1px solid ${cores.superficie3}`,
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden'
@@ -1068,9 +1055,9 @@ const buscarTrechoPorParadasAtuais = async () => {
                                 Trecho {idx + 1}
                               </Typography>
                               {trecho.existe ? (
-                                <CheckCircleIcon sx={{ fontSize: 14, color: '#4caf50' }} />
+                                <CheckCircleIcon sx={{ fontSize: 14, color: 'success.main' }} />
                               ) : (
-                                <ErrorIcon sx={{ fontSize: 14, color: '#ff9800' }} />
+                                <ErrorIcon sx={{ fontSize: 14, color: 'warning.main' }} />
                               )}
                               {trecho.origem && trecho.origem !== selectedItinerario?.id && (
                                 <Chip 
@@ -1124,7 +1111,7 @@ const buscarTrechoPorParadasAtuais = async () => {
               </Box>
             )}
             
-            <Box sx={{ mt: 2, p: 1, bgcolor: '#f5f5f5', borderRadius: 2, flexShrink: 0 }}>
+            <Box sx={{ mt: 2, p: 1, bgcolor: cores.superficie2, borderRadius: 2, flexShrink: 0 }}>
               <Typography variant="caption" color="textSecondary">
                 💡 Dicas:
                 <br />• Clique no mapa para adicionar pontos
@@ -1138,23 +1125,24 @@ const buscarTrechoPorParadasAtuais = async () => {
 
         {/* Mapa */}
         <Box sx={{ flex: 1, position: 'relative' }}>
-          <IconButton
+          <IconButton aria-label={drawerOpen ? 'Fechar painel' : 'Abrir painel'}
             onClick={() => setDrawerOpen(!drawerOpen)}
             sx={{
               position: 'absolute',
               top: 16,
               left: drawerOpen ? 336 : 16,
               zIndex: 1000,
-              bgcolor: 'white',
+              bgcolor: cores.superficie1,
+              color: cores.texto,
               boxShadow: 2,
-              '&:hover': { bgcolor: '#f5f5f5' }
+              '&:hover': { bgcolor: cores.superficie2 }
             }}
           >
             <DragHandleIcon />
           </IconButton>
           
           {editMode === 'draw' && (
-            <Paper sx={{ position: 'absolute', bottom: 16, right: 16, zIndex: 1000, p: 1, bgcolor: 'rgba(255,255,255,0.9)' }}>
+            <Paper sx={{ position: 'absolute', bottom: 16, right: 16, zIndex: 1000, p: 1, bgcolor: 'rgba(26, 26, 26, 0.9)' }}>
               <Typography variant="caption" color="primary" fontWeight="bold">
                 ✏️ Modo Desenho - Clique no mapa para adicionar pontos
               </Typography>
@@ -1162,7 +1150,7 @@ const buscarTrechoPorParadasAtuais = async () => {
           )}
           
           {isAligning && (
-            <Paper sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1000, p: 1, bgcolor: 'rgba(0,0,0,0.7)', color: 'white' }}>
+            <Paper sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1000, p: 1, bgcolor: 'rgba(0,0,0,0.7)', color: cores.texto }}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <CircularProgress size={20} color="inherit" />
                 <Typography variant="caption">Processando...</Typography>

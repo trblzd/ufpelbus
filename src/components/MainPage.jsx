@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, CircleMarker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { db } from '../services/firebase';
 import { collection, getDocs, doc, setDoc, serverTimestamp, onSnapshot, deleteDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
-import { Box, Button, Typography, Paper, CircularProgress, Stack, Chip, IconButton, Snackbar, Alert, LinearProgress } from '@mui/material';
+import { Box, Button, Typography, Paper, Skeleton, Stack, Chip, IconButton, Snackbar, Alert, LinearProgress } from '@mui/material';
+import { CloseIcon, DirectionsBusIcon, LocationOnIcon, ScheduleIcon, TripOriginIcon } from './icons';
 import { traduzirSigla } from '../utils/dicionarioParadas';
 import { calculateDistance } from '../utils/geoUtils';
 import { useLocation as useGeoLocation } from '../hooks/useLocation';
@@ -21,51 +22,40 @@ import { usePersistViagem } from '../hooks/usePersistViagem';
 import { useEmbarqueAutomatico } from '../hooks/useEmbarqueAutomatico';
 import { usePageVisibility } from '../hooks/usePageVisibility';
 import { getAuth } from 'firebase/auth';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
+import { cores } from '../theme/tokens';
 import 'leaflet/dist/leaflet.css';
 import './MainPage.css';
 
 // ==================== CONSTANTES E CONFIGURAÇÕES ====================
 
-const iconEmbarque = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34]
+const iconEmbarque = new L.DivIcon({
+  className: 'custom-stop-icon',
+  html: `<div style="width:24px;height:24px;border-radius:50%;background:${cores.marca};border:2px solid ${cores.marcaClara};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.25)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:${cores.texto}">trip_origin</span></div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -12]
 });
 
 const iconIntermediario = new L.DivIcon({
   className: 'custom-stop-icon',
-  html: `<div style="background-color: white; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #154370;"></div>`,
+  html: `<div style="width:10px;height:10px;border-radius:50%;background:${cores.superficie1};border:2px solid ${cores.texto2}"></div>`,
   iconSize: [14, 14],
   iconAnchor: [7, 7]
 });
 
 const iconDestino = new L.DivIcon({
   className: 'custom-stop-icon',
-  html: `<div style="background-color: #0EA503; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #0EA503;"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7]
+  html: `<div style="width:24px;height:24px;border-radius:50%;background:${cores.marca};border:2px solid ${cores.marcaClara};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.25)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:${cores.texto};font-variation-settings:'FILL' 1">location_on</span></div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -12]
 });
 
 const iconOnibus = new L.DivIcon({
   className: 'custom-bus-icon',
-  html: `<div style="
-    background-color: #1E58FF; 
-    width: 20px; 
-    height: 20px; 
-    border-radius: 50%; 
-    border: 3px solid white;
-    box-shadow: 0 0 10px rgba(30,88,255,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    color: white;
-  ">🚌</div>`,
-  iconSize: [20, 20],
-  iconAnchor: [10, 10]
+  html: `<div style="width:32px;height:32px;border-radius:50%;background:${cores.marca};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.25)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:${cores.texto};font-variation-settings:'FILL' 1">directions_bus</span></div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
 });
 
 const TEMPO_CONFIRMACAO_MS = 5000;
@@ -625,9 +615,9 @@ export default function MainPage({
     if (votosRecentes.length === 0) return null;
     const soma = votosRecentes.reduce((acc, curr) => acc + curr.valor, 0);
     const media = parseFloat((soma / votosRecentes.length).toFixed(1));
-    let label = "Vazio", cor = "#0EA503";
-    if (media > 4.0) { label = "Lotado"; cor = "#C4151C"; }
-    else if (media > 2.5) { label = "Médio"; cor = "#FF8A31"; }
+    let label = "Vazio", cor = cores.sucesso;
+    if (media > 4.0) { label = "Lotado"; cor = cores.perigo; }
+    else if (media > 2.5) { label = "Médio"; cor = cores.alerta; }
     return { media, label, cor };
   }, [viagemAtiva]);
 
@@ -671,15 +661,11 @@ export default function MainPage({
   }, [carregandoTempo, statusFluxo, tempoParaOnibusChegar, tempoAteDestino]);
 
   // ==================== RENDER DOS TRAÇOS DO MAPA COM GRADIENTE ====================
-  const renderGradiente = () => {
+  const renderRota = () => {
     if (paradasTrecho.length < 2) return null;
 
     const oriIdx = origem ? paradasTrecho.findIndex(p => p === origem.toLowerCase().trim()) : -1;
     const dstIdx = destino ? paradasTrecho.findIndex(p => p === destino.toLowerCase().trim()) : -1;
-
-    const startIdx = (oriIdx !== -1 && dstIdx !== -1) ? oriIdx : 0;
-    const endIdx = (oriIdx !== -1 && dstIdx !== -1) ? dstIdx : paradasTrecho.length - 1;
-    const totalTramos = endIdx - startIdx;
 
     return paradasTrecho.map((idA, i) => {
       if (i === paradasTrecho.length - 1) return null;
@@ -703,18 +689,48 @@ export default function MainPage({
         ? (i >= oriIdx && i < dstIdx)
         : true;
 
-      let cor = '#444444';
-      let weight = 2;
-      let opacity = 0.3;
+      if (isActiveSegment && !isEstimada) {
+        return (
+          <Fragment key={i}>
+            <Polyline
+              positions={positions}
+              pathOptions={{
+                color: cores.preto,
+                weight: 9,
+                opacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round'
+              }}
+            />
+            <Polyline
+              positions={positions}
+              pathOptions={{
+                color: cores.marcaClara,
+                weight: 5,
+                opacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round'
+              }}
+            />
+          </Fragment>
+        );
+      }
 
-      if (isActiveSegment) {
-        const progresso = totalTramos > 0 ? (i - startIdx) / totalTramos : 0;
-        const r = Math.round(255 * (1 - progresso));
-        const g = Math.round(255 * progresso);
-        const b = 0;
-        cor = `rgb(${r}, ${g}, ${b})`;
-        weight = isEstimada ? 4 : 6;
-        opacity = 0.5;
+      if (isActiveSegment && isEstimada) {
+        return (
+          <Polyline
+            key={i}
+            positions={positions}
+            pathOptions={{
+              color: cores.marcaClara,
+              weight: 4,
+              opacity: 0.8,
+              dashArray: '8, 8',
+              lineCap: 'round',
+              lineJoin: 'round'
+            }}
+          />
+        );
       }
 
       return (
@@ -722,10 +738,9 @@ export default function MainPage({
           key={i}
           positions={positions}
           pathOptions={{
-            color: cor,
-            weight: weight,
-            opacity: opacity,
-            dashArray: isEstimada && isActiveSegment ? '10, 8' : undefined,
+            color: cores.texto3,
+            weight: 3,
+            opacity: 0.6,
             lineCap: 'round',
             lineJoin: 'round'
           }}
@@ -739,24 +754,60 @@ export default function MainPage({
     setAlertaMsg(null);
   };
 
+  const legenda = (
+    <div className="map-legend">
+      <div className="map-legend-item">
+        <TripOriginIcon className="map-legend-marcador" sx={{ fontSize: 16 }} />
+        <span className="map-legend-label">Embarque</span>
+      </div>
+      <div className="map-legend-item">
+        <span className="map-legend-linha" />
+        <span className="map-legend-label">Rota</span>
+      </div>
+      <div className="map-legend-item">
+        <LocationOnIcon className="map-legend-marcador" sx={{ fontSize: 16 }} />
+        <span className="map-legend-label">Destino</span>
+      </div>
+    </div>
+  );
+
   if (loading || reconectando) return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#1A1A1A' }}>
-      <CircularProgress />
-      <Typography variant="body2" color="#A1A1AA">{reconectando ? 'Reconectando...' : 'Carregando...'}</Typography>
-    </Box>
+    <div className="mainpage-wrapper mapa-tela" aria-busy="true">
+      <div className="map-bottom-wrapper" key="esqueleto">
+        <div className="map-info-card">
+          <div className="map-info-row">
+            <div className="map-info-left">
+              <span className="map-info-title">{categoria || destino || "Rota"}</span>
+              <Skeleton variant="text" width={140} sx={{ fontSize: 14 }} />
+            </div>
+            <div className="map-info-right">{horario}</div>
+          </div>
+          {legenda}
+        </div>
+        <Skeleton variant="rounded" height={56} sx={{ borderRadius: 'var(--raio-pill)' }} />
+        <Typography variant="body2" sx={{ color: cores.texto2, textAlign: 'center' }}>
+          {reconectando ? 'Reconectando...' : 'Carregando...'}
+        </Typography>
+      </div>
+    </div>
   );
 
   return (
-    <div className="mainpage-wrapper">
+    <div className="mainpage-wrapper mapa-tela">
 
       {/* MAPA AO FUNDO */}
-      <div className="map-container-full">
+      <div className="map-container-full aparecer">
         <MapContainer center={coords[0] || [-31.76, -52.33]} zoom={15} zoomControl={false} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2zia_1_7597566517a627144c3ece15" />
-          {renderGradiente()}
+          {renderRota()}
 
           {posicaoOnibus && viagemAtiva && !modoApenasConsulta && (
             <Marker position={[posicaoOnibus.lat, posicaoOnibus.lng]} icon={iconOnibus} />
+          )}
+          {position?.lat != null && position?.lng != null && (
+            <CircleMarker center={[position.lat, position.lng]} radius={7} pathOptions={{ color: cores.texto, weight: 3, fillColor: cores.info, fillOpacity: 1 }}>
+              <Popup><Typography variant="body2" sx={{ color: cores.texto, fontWeight: 500 }}>Você está aqui</Typography></Popup>
+            </CircleMarker>
           )}
 
           {paradasTrecho.map((id, i) => {
@@ -774,7 +825,7 @@ export default function MainPage({
 
             return (
               <Marker key={i} position={c} icon={icon}>
-                <Popup><Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>{traduzirSigla(id)}</Typography></Popup>
+                <Popup><Typography variant="body2" sx={{ color: cores.texto, fontWeight: 500 }}>{traduzirSigla(id)}</Typography></Popup>
               </Marker>
             );
           })}
@@ -782,15 +833,15 @@ export default function MainPage({
       </div>
 
       {/* BOTÃO FECHAR/VOLTAR (X) */}
-      <button className="map-top-close-btn" onClick={handleFechar}>
-        X
+      <button type="button" className="map-top-close-btn" onClick={handleFechar} aria-label="Fechar">
+        <CloseIcon sx={{ fontSize: 22 }} />
       </button>
 
       {/* BADGE SUPERIOR - Visto por Último */}
       {!modoApenasConsulta && viagemAtiva && (
         <div className="map-top-badge-container">
           <div className="map-top-badge">
-            <span className="map-badge-title">Visto por Último em:</span>
+            <span className="map-badge-title">Visto por último em</span>
             <span className="map-badge-value">{traduzirSigla(viagemAtiva.ultimaParada)}</span>
           </div>
         </div>
@@ -798,66 +849,6 @@ export default function MainPage({
 
       {/* CONTAINER INFERIOR (Ações e Informações) */}
       <div className="map-bottom-wrapper">
-
-        {/* ÁREA DE AÇÕES */}
-        <div className="map-actions-area">
-
-          {/* Estado de Expulsão (Conclusão) */}
-          {statusFluxo === 'expulso' && (
-            <div className="expulsao-alert">
-              Você foi liberado do ônibus!
-            </div>
-          )}
-
-          {/* Estado de Votação de Lotação */}
-          {statusFluxo === 'votando' && (
-            <div className="lotacao-card">
-              <Typography className="lotacao-title">Como está a lotação do ônibus?</Typography>
-              <button className="btn-lotacao vazio" onClick={() => handleVotarLotacao('vazio')}>Vazio</button>
-              <button className="btn-lotacao medio" onClick={() => handleVotarLotacao('medio')}>Médio</button>
-              <button className="btn-lotacao lotado" onClick={() => handleVotarLotacao('lotado')}>Lotado</button>
-            </div>
-          )}
-
-          {/* Badges de Status */}
-          <div className="dark-status-chips">
-            {infoLotacao && statusFluxo !== 'votando' && (
-              <Chip label={`${infoLotacao.label} (${infoLotacao.media})`} size="small" sx={{ fontWeight: 'bold', color: 'white', backgroundColor: infoLotacao.cor }} />
-            )}
-            {statusFluxo === 'rastreando' && isRastreador && (
-              <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" sx={{ fontWeight: 'bold', bgcolor: '#1E58FF', color: 'white' }} />
-            )}
-          </div>
-
-          {/* Botão de Embarque Inicial */}
-          {!modoApenasConsulta && statusFluxo === 'inicial' && (
-            <Box sx={{ width: '100%' }}>
-              {embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' && velocidadeAuto < 1 && tempoRestante && (
-                <Paper elevation={3} sx={{ mb: 1.5, p: 1.5, borderRadius: '16px', bgcolor: '#2a2a2a' }}>
-                  <Stack spacing={1}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="caption" sx={{ color: '#0EA503', fontWeight: 'bold' }}>
-                        Embarque em {Math.ceil(tempoRestante / 1000)}s...
-                      </Typography>
-                    </Stack>
-                    <LinearProgress variant="determinate" value={Math.min(progressoEmbarque, 100)} sx={{ height: 6, borderRadius: 3, bgcolor: '#4A4A4A', '& .MuiLinearProgress-bar': { bgcolor: '#0EA503' } }} />
-                  </Stack>
-                </Paper>
-              )}
-
-              {/* BOTÃO DISTANCIA PARADA METROS */}
-              <Button
-                variant="contained"
-                className="dark-action-btn"
-                disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50}
-                onClick={async () => { if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); await handleConfirmarEmbarque(); }}
-                sx={{ width: '100%' }}
-              >
-                {embarcando ? 'Processando...' : ((distanciaAteParada || distanciaAuto || 999) > 50 ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)` : (embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' ? `Aguardando (${Math.ceil(tempoRestante / 1000)}s)...` : 'Confirmar Embarque'))}
-              </Button>
-            </Box>
-          )}
-        </div>
 
         {/* BLOCO DE INFORMAÇÕES INFERIOR COM LEGENDA */}
         <div className="map-info-card">
@@ -871,35 +862,92 @@ export default function MainPage({
             </div>
           </div>
 
-          {/* Legenda do Gradiente */}
-          <div className="map-legend">
-            <div className="map-legend-item">
-              <div className="map-legend-color" style={{ backgroundColor: '#FF0000' }}></div>
-              <span className="map-legend-label">Início</span>
+          {/* Legenda do Traçado */}
+          {legenda}
+        </div>
+
+        {/* ÁREA DE AÇÕES */}
+        <div className="map-actions-area aparecer">
+
+          {/* Estado de Expulsão (Conclusão) */}
+          {statusFluxo === 'expulso' && (
+            <div className="expulsao-alert">
+              Você foi liberado do ônibus!
             </div>
-            <span className="map-legend-divider">→</span>
-            <div className="map-legend-item">
-              <div className="map-legend-color" style={{
-                background: 'linear-gradient(to right, #FF0000, #00FF00)',
-                width: '30px',
-                height: '4px',
-                borderRadius: '2px'
-              }}></div>
-              <span className="map-legend-label">Rota</span>
+          )}
+
+          {/* Estado de Votação de Lotação */}
+          {statusFluxo === 'votando' && (
+            <div className="lotacao-card">
+              <Typography className="lotacao-title">Como está a lotação do ônibus?</Typography>
+              <button type="button" className="btn-lotacao" onClick={() => handleVotarLotacao('vazio')}>
+                <span className="status-dot" style={{ backgroundColor: cores.sucesso }} aria-hidden="true" />
+                Vazio
+              </button>
+              <button type="button" className="btn-lotacao" onClick={() => handleVotarLotacao('medio')}>
+                <span className="status-dot" style={{ backgroundColor: cores.alerta }} aria-hidden="true" />
+                Médio
+              </button>
+              <button type="button" className="btn-lotacao" onClick={() => handleVotarLotacao('lotado')}>
+                <span className="status-dot" style={{ backgroundColor: cores.perigo }} aria-hidden="true" />
+                Lotado
+              </button>
             </div>
-            <span className="map-legend-divider">→</span>
-            <div className="map-legend-item">
-              <div className="map-legend-color" style={{ backgroundColor: '#00FF00' }}></div>
-              <span className="map-legend-label">Destino</span>
-            </div>
+          )}
+
+          {/* Badges de Status */}
+          <div className="dark-status-chips">
+            {infoLotacao && statusFluxo !== 'votando' && (
+              <Chip
+                icon={<span className="status-dot" style={{ backgroundColor: infoLotacao.cor, marginLeft: 10 }} aria-hidden="true" />}
+                label={`${infoLotacao.label} (${infoLotacao.media})`}
+                size="small"
+              />
+            )}
+            {statusFluxo === 'rastreando' && isRastreador && (
+              <Chip icon={<DirectionsBusIcon sx={{ fontSize: 14 }} />} label="Rastreando" size="small" />
+            )}
           </div>
+
+          {/* Botão de Embarque Inicial */}
+          {!modoApenasConsulta && statusFluxo === 'inicial' && (
+            <Box sx={{ width: '100%' }}>
+              {embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' && velocidadeAuto < 1 && tempoRestante && (
+                <Box sx={{ mb: 1.5 }}>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" sx={{ color: cores.sucesso, fontWeight: 500 }}>
+                        Embarque em {Math.ceil(tempoRestante / 1000)}s...
+                      </Typography>
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(progressoEmbarque, 100)}
+                      sx={{ height: 4, borderRadius: 2, bgcolor: cores.superficie2, '& .MuiLinearProgress-bar': { bgcolor: cores.sucesso } }}
+                    />
+                  </Stack>
+                </Box>
+              )}
+
+              {/* BOTÃO DISTANCIA PARADA METROS */}
+              <Button
+                variant="contained"
+                size="large"
+                fullWidth
+                disabled={embarcando || (distanciaAteParada || distanciaAuto || 999) > 50}
+                onClick={async () => { if (embarqueAutomaticoAtivo) setEmbarqueAutomaticoAtivo(false); await handleConfirmarEmbarque(); }}
+              >
+                {embarcando ? 'Processando...' : ((distanciaAteParada || distanciaAuto || 999) > 50 ? `Longe (${Math.round(distanciaAteParada || distanciaAuto || 0)}m)` : (embarqueAutomaticoAtivo && statusEmbarqueAuto === 'proximo' ? `Aguardando (${Math.ceil(tempoRestante / 1000)}s)...` : 'Confirmar Embarque'))}
+              </Button>
+            </Box>
+          )}
         </div>
 
       </div>
 
       {/* SNACKBAR DE ALERTAS */}
       <Snackbar open={!!alertaMsg} autoHideDuration={4000} onClose={handleCloseAlert} anchorOrigin={{ vertical: 'top', horizontal: 'center' }} sx={{ mt: 10 }}>
-        <Alert onClose={handleCloseAlert} severity={alertaMsg?.severidade || 'info'} sx={{ width: '100%', fontWeight: 'bold' }}>
+        <Alert onClose={handleCloseAlert} severity={alertaMsg?.severidade || 'info'} sx={{ width: '100%' }}>
           {alertaMsg?.texto}
         </Alert>
       </Snackbar>

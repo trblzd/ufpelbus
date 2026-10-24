@@ -2,7 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { ThemeProvider, createTheme, CircularProgress, Box } from '@mui/material';
+import { ThemeProvider, createTheme, CircularProgress, Box, Fade } from '@mui/material';
+import { cores } from './theme/tokens';
+import { voltarComTransicao } from './theme/transicoes';
+import { CheckCircleIcon, CloseIcon, ErrorIcon, ExpandMoreIcon, InfoIcon, WarningIcon } from './components/icons';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from './services/firebase';
 
@@ -31,31 +34,74 @@ export const useAppData = () => {
 };
 
 // Tema da aplicação
+const fonteDisplay = '"Bricolage Grotesque Variable", "Inter Variable", system-ui, sans-serif';
 const theme = createTheme({
   palette: {
-    primary: { main: '#00418F' },
-    secondary: { main: '#0EA503' },
-    warning: { main: '#FF8A31' },
-    error: { main: '#C4151C' },
-    background: { default: '#F9F9F9' },
-    text: { primary: '#00418F' },
+    mode: 'dark',
+    primary: { main: cores.marcaClara, contrastText: cores.marcaContainer },
+    secondary: { main: cores.superficie2, contrastText: cores.texto },
+    success: { main: cores.sucesso, contrastText: cores.preto },
+    error: { main: cores.perigo },
+    warning: { main: cores.alerta, contrastText: cores.preto },
+    info: { main: cores.info },
+    background: { default: cores.canvas, paper: cores.superficie1 },
+    text: { primary: cores.texto, secondary: cores.texto2, disabled: cores.texto3 },
+    divider: cores.superficie3,
   },
-  shape: { borderRadius: 16 },
+  shape: { borderRadius: 12 },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h4: { fontWeight: 900, letterSpacing: '-0.5px' },
-    h5: { fontWeight: 800, letterSpacing: '-0.3px' },
-    h6: { fontWeight: 700 },
+    fontFamily: '"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    h4: { fontFamily: fonteDisplay, fontWeight: 700, letterSpacing: '-0.6px' },
+    h5: { fontFamily: fonteDisplay, fontWeight: 700, letterSpacing: '-0.4px' },
+    h6: { fontFamily: fonteDisplay, fontWeight: 600 },
+    button: { textTransform: 'none', fontWeight: 500 },
   },
   components: {
+    MuiMenu: { defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 150, exit: 75 } } },
+    MuiSnackbar: { defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 150, exit: 75 } } },
+    MuiSkeleton: { styleOverrides: { root: { backgroundColor: cores.superficie2 } } },
     MuiButton: {
+      defaultProps: { disableElevation: true },
       styleOverrides: {
-        root: {
-          textTransform: 'none',
-          fontWeight: 600,
-        },
+        root: { borderRadius: 999, fontSize: 15, minHeight: 44, transition: 'transform 0.1s, background-color 0.2s' },
+        sizeLarge: { minHeight: 56, fontSize: 17 },
       },
+      variants: [
+        {
+          props: { variant: 'contained', color: 'primary' },
+          style: {
+            backgroundColor: cores.marca,
+            color: cores.texto,
+            '&:hover': { backgroundColor: cores.marcaHover },
+            '&:active': { transform: 'scale(0.98)' },
+            '&.Mui-disabled': { backgroundColor: cores.superficie2, color: cores.texto3 },
+          },
+        },
+        {
+          props: { variant: 'outlined', color: 'primary' },
+          style: {
+            borderColor: cores.marcaClara,
+            color: cores.marcaClara,
+            '&:hover': { borderColor: cores.marcaClara, backgroundColor: 'rgba(169, 199, 255, 0.08)' },
+          },
+        },
+      ],
     },
+    MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+    MuiSelect: { defaultProps: { IconComponent: ExpandMoreIcon } },
+    MuiAlert: {
+      defaultProps: {
+        iconMapping: {
+          success: <CheckCircleIcon fontSize="inherit" />,
+          info: <InfoIcon fontSize="inherit" />,
+          warning: <WarningIcon fontSize="inherit" />,
+          error: <ErrorIcon fontSize="inherit" />,
+        },
+        slots: { closeIcon: CloseIcon },
+        slotProps: { closeIcon: { fontSize: 'small' } },
+      },
+      styleOverrides: { root: { backgroundColor: cores.superficie2, color: cores.texto, borderRadius: 16, fontWeight: 500, alignItems: 'center' } } },
+    MuiChip: { styleOverrides: { root: { borderRadius: 999, backgroundColor: cores.superficie2, color: cores.texto, fontWeight: 500 } } },
   },
 });
 
@@ -230,10 +276,6 @@ function MainPageWrapper() {
     console.error('Erro ao parsear itinerário:', e);
   }
   
-  const voltar = () => {
-    window.history.back();
-  };
-  
   return (
     <MainPage
       itinerario={itinerario}
@@ -241,7 +283,7 @@ function MainPageWrapper() {
       origem={origem}
       destino={destino}
       modoApenasConsulta={modo === 'verificar'}
-      voltar={voltar}
+      voltar={voltarComTransicao}
       categoria={categoria}
     />
   );
@@ -250,12 +292,10 @@ function MainPageWrapper() {
 // Wrapper para PersonalizationPage
 function PersonalizationPageWrapper() {
   const { idsParadasUnicas } = useAppData();
-  const voltar = () => window.history.back();
-  
   return (
     <PersonalizationPage
       idsParadas={idsParadasUnicas}
-      onVoltar={voltar}
+      onVoltar={voltarComTransicao}
       onApelidosSalvos={() => {}}
     />
   );

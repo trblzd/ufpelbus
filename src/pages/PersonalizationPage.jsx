@@ -4,12 +4,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Box, Typography, Button, List, ListItem, Select, MenuItem } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import SaveIcon from '@mui/icons-material/Save';
-import EmailIcon from '@mui/icons-material/Email';
+import { ArrowBackIcon, EmailIcon, SaveIcon } from '../components/icons';
 import { traduzirSigla, nomesExtenso } from '../utils/dicionarioParadas';
 import { getFavoritos, toggleFavorito } from '../services/favoritosService';
 import { getAllApelidos, setMultiplosApelidos, subscribeApelidos } from '../services/apelidosService';
+import { cores } from '../theme/tokens';
 
 // ==================== CONSTANTES ====================
 
@@ -155,7 +154,7 @@ const listaOrdenada = useMemo(() => {
       width: '100vw', 
       display: 'flex', 
       flexDirection: 'column', 
-      bgcolor: '#F9F9F9', 
+      bgcolor: cores.canvas, 
       p: 3, 
       boxSizing: 'border-box' 
     }}>
@@ -265,19 +264,20 @@ const listaOrdenada = useMemo(() => {
                     borderRadius: '8px', 
                     mb: 0.5, 
                     cursor: 'pointer',
-                    backgroundColor: isFav ? '#00418F' : 'transparent',  // Azul se favorito
-                    color: isFav ? '#FFFFFF' : 'inherit',
+                    backgroundColor: isFav ? cores.marcaContainer : 'transparent',
+                    border: isFav ? `2px solid ${cores.marcaClara}` : `1px solid ${cores.superficie2}`,
+                    color: cores.texto,
                     transition: 'background-color 0.2s',
                     '&:hover': { 
-                      backgroundColor: isFav ? '#003373' : '#F0F0F0' 
+                      backgroundColor: isFav ? cores.marcaContainer : cores.superficie1
                     }
                   }}
                 >
                   <Box>
-                    <Typography variant="body2" fontWeight={isFav ? 'bold' : 'normal'} color={isFav ? 'white' : 'inherit'}>
+                    <Typography variant="body2" fontWeight={isFav ? 'bold' : 'normal'} color={isFav ? cores.texto : 'inherit'}>
                       {traduzirSigla(id)}
                     </Typography>
-                    <Typography variant="caption" color={isFav ? '#EEE' : '#888'}>
+                    <Typography variant="caption" color={cores.texto2}>
                       {id.toUpperCase()}
                     </Typography>
                   </Box>

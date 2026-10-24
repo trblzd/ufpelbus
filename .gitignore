@@ -34,3 +34,7 @@ serviceAccountKey.json
 # IDEs
 .vscode/
 .idea/
+# Locais (não vão para o repositório)
+/graphify-out/
+/scripts/seed-emulator.mjs
+/src/devFakeLocation.js

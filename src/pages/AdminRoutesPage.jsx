@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../services/firebase';
+import { cores } from '../theme/tokens';
+import { transicionar } from '../theme/transicoes';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
   Box,
@@ -22,12 +24,7 @@ import {
   Alert,
   Snackbar,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import EditIcon from '@mui/icons-material/Edit';
-import MapIcon from '@mui/icons-material/Map';
-import SearchIcon from '@mui/icons-material/Search';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
+import { ArrowBackIcon, CheckCircleIcon, EditIcon, ErrorIcon, MapIcon, SearchIcon } from '../components/icons';
 
 // Função auxiliar para extrair nome da parada
 const extrairNomeParada = (parada) => {
@@ -131,11 +128,11 @@ export default function AdminRoutesPage() {
   }
   
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#E2E8F0', p: 3 }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: cores.canvas, p: 3 }}>
       <Container maxWidth="md">
         <Paper sx={{ p: 3, borderRadius: 3, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)', maxHeight: 'calc(100vh - 48px)' }}>
           <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3, flexShrink: 0 }}>
-            <IconButton onClick={() => navigate('/')}>
+            <IconButton aria-label="Voltar" onClick={() => transicionar('voltar', () => navigate('/'))}>
               <ArrowBackIcon />
             </IconButton>
             <Typography variant="h5" fontWeight="bold" color="primary" sx={{ flexGrow: 1 }}>
@@ -197,15 +194,15 @@ export default function AdminRoutesPage() {
                       disablePadding
                       secondaryAction={
                         <IconButton
-                          edge="end"
-                          onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}
+                          edge="end" aria-label="Editar itinerário"
+                          onClick={() => transicionar('avancar', () => navigate(`/admin/rotas/editar/${it.id}`))}
                           color="primary"
                         >
                           <EditIcon />
                         </IconButton>
                       }
                     >
-                      <ListItemButton onClick={() => navigate(`/admin/rotas/editar/${it.id}`)}>
+                      <ListItemButton onClick={() => transicionar('avancar', () => navigate(`/admin/rotas/editar/${it.id}`))}>
                         <ListItemText
                           primary={
                             <Stack direction="row" alignItems="center" spacing={1}>
@@ -232,7 +229,7 @@ export default function AdminRoutesPage() {
             )}
           </Box>
           
-          <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2, flexShrink: 0 }}>
+          <Box sx={{ p: 2, bgcolor: cores.superficie2, borderRadius: 2, flexShrink: 0 }}>
             <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
               Instruções:
             </Typography>

@@ -9,10 +9,45 @@
   box-sizing: border-box;
 }
 
+:root {
+  --cor-canvas: #0B0E14;
+  --cor-superficie-1: #141A24;
+  --cor-superficie-2: #1F2733;
+  --cor-superficie-3: #2A3442;
+  --cor-texto: #FFFFFF;
+  --cor-texto-2: #AEB7C6;
+  --cor-texto-3: #7A8597;
+  --cor-preto: #000000;
+  --cor-marca: #1257D6;
+  --cor-marca-hover: #2A6AE8;
+  --cor-marca-clara: #A9C7FF;
+  --cor-marca-container: #10305F;
+  --cor-sobre-marca-2: #DCE6FF;
+  --cor-sucesso: #22C77A;
+  --cor-perigo: #FF4C3F;
+  --cor-alerta: #FFCB00;
+  --cor-info: #4FC3F7;
+  --cor-link: #A9C7FF;
+  --cor-link-hover: #D6E3FF;
+  --cor-mapa: #121821;
+  --raio-sm: 8px;
+  --raio-md: 16px;
+  --raio-lg: 20px;
+  --raio-sheet: 28px;
+  --fonte-display: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
+  --raio-pill: 999px;
+  --sombra-controle: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --sombra-sheet: 0 -4px 24px rgba(0, 0, 0, 0.25);
+  --movimento-padrao: cubic-bezier(0.4, 0, 0.2, 1);
+  --movimento-desacelerar: cubic-bezier(0, 0, 0.2, 1);
+  --movimento-acelerar: cubic-bezier(0.4, 0, 1, 1);
+}
+
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #030303;
-  color: #FFFFFF;
+  font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--cor-canvas);
+  color: var(--cor-texto);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -26,4 +61,106 @@ body {
   width: 100%;
   height: 100%;
   z-index: 1;
+}
+
+/* Foco visível só para navegação por teclado */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="combobox"]:focus-visible {
+  outline: 2px solid var(--cor-marca-clara);
+  outline-offset: 2px;
+}
+
+/* Bolinha de status (lotação etc.); cor via style inline */
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ==================== MOVIMENTO M3 ====================
+   Padrões de transição do M3 (sistema legado de easing e duração).
+   O tipo vem de html[data-transicao], definido por src/theme/transicoes.js. */
+@keyframes m3-sumir { to { opacity: 0; } }
+@keyframes m3-aparecer { from { opacity: 0; } }
+@keyframes m3-aparecer-escala { from { opacity: 0; transform: scale(0.92); } }
+@keyframes m3-sair-esquerda-30 { to { transform: translateX(-30px); } }
+@keyframes m3-sair-direita-30 { to { transform: translateX(30px); } }
+@keyframes m3-entrar-direita-30 { from { transform: translateX(30px); } }
+@keyframes m3-entrar-esquerda-30 { from { transform: translateX(-30px); } }
+@keyframes m3-sair-esquerda { to { transform: translateX(-100%); } }
+@keyframes m3-sair-direita { to { transform: translateX(100%); } }
+@keyframes m3-entrar-direita { from { transform: translateX(100%); } }
+@keyframes m3-entrar-esquerda { from { transform: translateX(-100%); } }
+@keyframes m3-escurecer { to { filter: brightness(0.68); } }
+@keyframes m3-expandir-y { from { clip-path: inset(0 0 100% 0); } }
+
+::view-transition-group(*) { animation-duration: 300ms; animation-timing-function: var(--movimento-padrao); }
+::view-transition-old(*), ::view-transition-new(*) { mix-blend-mode: normal; }
+::view-transition-group(regiao) { overflow: clip; }
+
+/* Avançar e voltar (eixo X): o conteúdo velho some nos primeiros 35%, o novo entra depois */
+html[data-transicao="avancar"]::view-transition-old(root),
+html[data-transicao="avancar"]::view-transition-old(regiao) {
+  animation: m3-sumir 105ms var(--movimento-acelerar) both, m3-sair-esquerda-30 300ms var(--movimento-padrao) both;
+}
+html[data-transicao="avancar"]::view-transition-new(root),
+html[data-transicao="avancar"]::view-transition-new(regiao) {
+  animation: m3-aparecer 195ms var(--movimento-desacelerar) 105ms both, m3-entrar-direita-30 300ms var(--movimento-padrao) both;
+}
+html[data-transicao="voltar"]::view-transition-old(root),
+html[data-transicao="voltar"]::view-transition-old(regiao) {
+  animation: m3-sumir 105ms var(--movimento-acelerar) both, m3-sair-direita-30 300ms var(--movimento-padrao) both;
+}
+html[data-transicao="voltar"]::view-transition-new(root),
+html[data-transicao="voltar"]::view-transition-new(regiao) {
+  animation: m3-aparecer 195ms var(--movimento-desacelerar) 105ms both, m3-entrar-esquerda-30 300ms var(--movimento-padrao) both;
+}
+
+/* Lateral: conteúdo par desliza junto, sem fade; cabeçalho e abas ficam parados */
+html[data-transicao^="lateral"] .horarios-cabecalho { view-transition-name: cabecalho; }
+html[data-transicao^="lateral"] .custom-tabs { view-transition-name: abas; }
+html[data-transicao="lateral-proximo"]::view-transition-old(regiao) { animation: m3-sair-esquerda 300ms var(--movimento-padrao) both; }
+html[data-transicao="lateral-proximo"]::view-transition-new(regiao) { animation: m3-entrar-direita 300ms var(--movimento-padrao) both; }
+html[data-transicao="lateral-anterior"]::view-transition-old(regiao) { animation: m3-sair-direita 300ms var(--movimento-padrao) both; }
+html[data-transicao="lateral-anterior"]::view-transition-new(regiao) { animation: m3-entrar-esquerda 300ms var(--movimento-padrao) both; }
+
+/* Top level (fade through): a barra de navegação fica parada */
+html[data-transicao="topo"] .tab-bar { view-transition-name: barra; }
+html[data-transicao="topo"]::view-transition-old(root) { animation: m3-sumir 105ms var(--movimento-acelerar) both; }
+html[data-transicao="topo"]::view-transition-new(root) { animation: m3-aparecer-escala 195ms var(--movimento-desacelerar) 105ms both; }
+
+::view-transition-group(barra), ::view-transition-old(barra), ::view-transition-new(barra),
+::view-transition-group(abas), ::view-transition-old(abas), ::view-transition-new(abas),
+::view-transition-group(cabecalho), ::view-transition-old(cabecalho), ::view-transition-new(cabecalho) { animation: none; }
+
+/* Container transform: o card cresce até virar a tela do mapa, sobre a Home escurecida */
+html[data-transicao="container"] .mapa-tela { view-transition-name: container; }
+html[data-transicao="container"]::view-transition-group(container) { overflow: clip; border-radius: var(--raio-md); }
+html[data-transicao="container"]::view-transition-old(container),
+html[data-transicao="container"]::view-transition-new(container) { block-size: 100%; object-fit: none; object-position: 50% 0; }
+html[data-transicao="container"]::view-transition-old(container) { animation: m3-sumir 105ms var(--movimento-acelerar) both; }
+html[data-transicao="container"]::view-transition-new(container) { animation: m3-aparecer 195ms var(--movimento-desacelerar) 105ms both; }
+html[data-transicao="container"]::view-transition-old(root) { animation: m3-escurecer 300ms var(--movimento-padrao) both; }
+html[data-transicao="container"]::view-transition-new(root) { animation: none; opacity: 0; }
+
+/* Movimento reduzido: só fades, sem deslizar nem escalar */
+html[data-reduzido]::view-transition-group(*) { animation-duration: 0s !important; }
+html[data-reduzido]::view-transition-old(root),
+html[data-reduzido]::view-transition-old(regiao) { animation: m3-sumir 105ms linear both !important; }
+html[data-reduzido]::view-transition-new(root),
+html[data-reduzido]::view-transition-new(regiao),
+html[data-reduzido]::view-transition-new(container) { animation: m3-aparecer 195ms linear 105ms both !important; }
+
+/* Com região, o resto da página troca na hora */
+html[data-escopo="regiao"]::view-transition-old(root),
+html[data-escopo="regiao"]::view-transition-new(root) { animation: none !important; }
+
+/* Entrada na tela: menus e snackbars (no topo) se expandem para baixo */
+.MuiMenu-paper,
+.MuiSnackbar-root .MuiAlert-root { animation: m3-expandir-y 250ms var(--movimento-desacelerar); }
+
+/* Conteúdo carregado entra com fade rápido sobre o skeleton */
+.aparecer { animation: m3-aparecer 150ms linear; }
+
+@media (prefers-reduced-motion: reduce) {
+  .MuiMenu-paper,
+  .MuiSnackbar-root .MuiAlert-root { animation: none; }
 }

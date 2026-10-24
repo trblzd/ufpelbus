@@ -12,34 +12,52 @@ import {
 } from '../services/transporteService';
 import {
   Box, Tabs, Tab, Paper, Typography, Button,
-  MenuItem, Select, FormControl, CircularProgress, createTheme, ThemeProvider,
+  MenuItem, Select, FormControl, CircularProgress, Skeleton,
   List, ListItemButton, Modal, IconButton, Divider, ListItem, Link,
   Snackbar, Alert,
-  Tooltip
+  Tooltip, Slide, Fade, useMediaQuery
 } from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
-import RestaurantMenuIcon from '@mui/icons-material/RestaurantMenu';
-import CloseIcon from '@mui/icons-material/Close';
-import SaveIcon from '@mui/icons-material/Save';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import StarIcon from '@mui/icons-material/Star';
-import CheckIcon from '@mui/icons-material/Check';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import LogoutIcon from '@mui/icons-material/Logout';
+import { ArrowBackIcon, BookmarkBorderIcon, CheckIcon, CloseIcon, CloudUploadIcon, DirectionsBusFilledIcon, EditIcon, LocationOnIcon, LogoutIcon, PersonIcon, RestaurantMenuIcon, SaveIcon, ScheduleIcon, StarIcon, TripOriginIcon } from '../components/icons';
 import { useAppData } from '../App';
 import { getFavoritos, toggleFavorito } from '../services/favoritosService';
 import { getAllApelidos, setMultiplosApelidos, getApelidoComFallback } from '../services/apelidosService';
+import { cores, movimento } from '../theme/tokens';
+import { transicionar } from '../theme/transicoes';
 import './HomePage.css';
 
-const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: { main: '#0845FF' },
-    background: { default: '#191919', paper: '#2E2E2E' },
-    text: { primary: '#FFFFFF', secondary: '#7C7C7C' },
-  },
-});
+
+// Enter/Espaço em elementos clicáveis que não são <button>
+const ativarComTeclado = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
+
+// Modais como bottom sheet: cantos só em cima e alça
+const sheetSx = {
+  backgroundColor: cores.superficie1,
+  borderRadius: '28px 28px 0 0',
+  padding: '12px 16px calc(24px + env(safe-area-inset-bottom, 0px))',
+  maxWidth: '480px',
+  width: '100%',
+  margin: 0,
+  maxHeight: '85dvh',
+  display: 'flex',
+  flexDirection: 'column',
+  boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.25)',
+  overflow: 'hidden',
+  outline: 'none',
+  '&::before': { content: '""', display: 'block', width: 36, height: 4, borderRadius: 2, backgroundColor: cores.superficie3, mx: 'auto', mb: '16px', flexShrink: 0 },
+};
+
+// Bottom sheet M3: entra e sai pela borda de baixo, sem fade; com movimento reduzido, só fade
+function Folha({ open, onClose, sx, children }) {
+  const reduzir = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const Transicao = reduzir ? Fade : Slide;
+  return (
+    <Modal open={open} onClose={onClose} closeAfterTransition slotProps={{ backdrop: { transitionDuration: { enter: 250, exit: 200 } } }}>
+      <Transicao in={open} {...(reduzir ? {} : { direction: 'up' })} timeout={{ enter: 250, exit: 200 }} easing={{ enter: movimento.desacelerar, exit: movimento.acelerar }}>
+        <Box sx={{ ...sheetSx, ...sx }}>{children}</Box>
+      </Transicao>
+    </Modal>
+  );
+}
 
 const PARADAS_IGNORADAS = ['int_', 'ponto-indefinido'];
 
@@ -119,18 +137,15 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     const media = parseFloat((soma / votosRecentes.length).toFixed(1));
 
     let label = 'Vazio';
-    let cor = '#0EA503';
-    let emoji = '🟢';
+    let cor = cores.sucesso;
     if (media > 4.0) {
       label = 'Lotado';
-      cor = '#C4151C';
-      emoji = '🔴';
+      cor = cores.perigo;
     } else if (media > 2.5) {
       label = 'Médio';
-      cor = '#FF8A31';
-      emoji = '🟡';
+      cor = cores.alerta;
     }
-    return { media, label, cor, emoji };
+    return { media, label, cor };
   }, [viagemInfo.historicoLotacao]);
 
   // ============ TEMPO DECORRIDO (atualiza a cada 30s) ============
@@ -247,13 +262,13 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
     <Paper className="bus-item-card" elevation={0}>
       <ListItemButton
         onClick={onClick}
-        sx={{ p: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        sx={{ p: '16px', minHeight: 72, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
       >
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography className="bus-item-title">{opt.cat}</Typography>
             {infoLotacao && (
-              <span style={{ fontSize: '14px' }}>{infoLotacao.emoji}</span>
+              <span className="status-dot" style={{ backgroundColor: infoLotacao.cor }} aria-label={`Lotação: ${infoLotacao.label}`} role="img" />
             )}
           </Box>
 
@@ -266,13 +281,13 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
                 </Typography>
               )}
               {infoLotacao && (
-                <Typography className="bus-item-info-line" style={{ color: '#A1A1AA' }}>
+                <Typography className="bus-item-info-line">
                   Lotação: {infoLotacao.label}
                 </Typography>
               )}
             </>
           ) : (
-            <Typography className="bus-item-info-line" style={{ color: '#7C7C7C', fontStyle: 'italic' }}>
+            <Typography className="bus-item-info-line">
               Sem informações
             </Typography>
           )}
@@ -280,11 +295,11 @@ const BusItem = ({ opt, onClick, safeTraduzir }) => {
           {carregandoTempo ? (
             <Typography className="bus-item-info-line">Calculando tempo...</Typography>
           ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'chegando' && horarioChegadaEstimado ? (
-            <Typography className="bus-item-info-line" style={{ color: '#0845FF', fontWeight: '600' }}>
+            <Typography className="bus-item-info-line bus-item-info-line--destaque">
               Pode chegar até {horarioChegadaEstimado}
             </Typography>
           ) : tempoParaOnibusChegar && tempoParaOnibusChegar.status === 'aqui' ? (
-            <Typography className="bus-item-info-line" style={{ color: '#0845FF', fontWeight: '600' }}>
+            <Typography className="bus-item-info-line bus-item-info-line--chegou">
               Está no seu ponto agora!
             </Typography>
           ) : null}
@@ -301,6 +316,7 @@ const ModalRenomear = ({ open, onClose, idsParadas }) => {
   const [listaOrdenada, setListaOrdenada] = useState([]);
   const [paradaSelecionada, setParadaSelecionada] = useState(null);
   const [modoSelecao, setModoSelecao] = useState('lista');
+  const listaRef = useRef(null);
 
   useEffect(() => {
     if (open) {
@@ -339,15 +355,15 @@ useEffect(() => {
     return [traduzirSigla(sigla), sigla.toUpperCase(), sigla.toLowerCase()];
   };
 
-  const handleSelecionarParada = (id) => {
+  const handleSelecionarParada = (id) => transicionar('avancar', () => {
     setParadaSelecionada(id);
     setModoSelecao('opcoes');
-  };
+  }, { regiao: listaRef.current });
 
-  const handleVoltarLista = () => {
+  const handleVoltarLista = () => transicionar('voltar', () => {
     setModoSelecao('lista');
     setParadaSelecionada(null);
-  };
+  }, { regiao: listaRef.current });
 
   const handleEscolherOpcao = (id, opcao) => {
     handleMudarApelido(id, opcao);
@@ -355,21 +371,7 @@ useEffect(() => {
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
-      }}>
+    <Folha open={open} onClose={onClose}>
         <Box sx={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -378,18 +380,19 @@ useEffect(() => {
         }}>
           {modoSelecao === 'opcoes' && (
             <IconButton 
+              aria-label="Voltar para a lista"
               onClick={handleVoltarLista}
               sx={{ 
-                color: '#7C7C7C',
+                color: cores.texto2,
                 padding: '4px',
-                '&:hover': { color: '#FFFFFF' }
+                '&:hover': { color: cores.texto }
               }}
             >
               <ArrowBackIcon />
             </IconButton>
           )}
           <Typography sx={{ 
-            color: '#FFFFFF', 
+            color: cores.texto, 
             fontSize: '20px', 
             fontWeight: 700
           }}>
@@ -397,7 +400,7 @@ useEffect(() => {
           </Typography>
         </Box>
         
-        <Box sx={{ 
+        <Box ref={listaRef} sx={{ 
           flex: 1,
           overflowY: 'auto',
           pr: 1,
@@ -408,7 +411,7 @@ useEffect(() => {
             background: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: '#3A3A3A',
+            background: cores.superficie3,
             borderRadius: '4px',
           }
         }}>
@@ -417,32 +420,35 @@ useEffect(() => {
               <Box 
                 key={id} 
                 onClick={() => handleSelecionarParada(id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={ativarComTeclado(() => handleSelecionarParada(id))}
                 sx={{ 
-                  backgroundColor: '#2A2A2A',
+                  backgroundColor: 'transparent',
                   borderRadius: '16px',
-                  padding: '14px 18px',
+                  padding: '14px 16px',
+                  minHeight: 56,
                   marginBottom: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  border: '1px solid transparent',
+                  border: `1px solid ${cores.superficie2}`,
                   '&:hover': {
-                    borderColor: '#3A3A3A',
-                    backgroundColor: '#353535',
+                    backgroundColor: cores.superficie2,
                   }
                 }}
               >
                 <Typography sx={{ 
-                  color: '#E0E0E0', 
+                  color: cores.texto, 
                   fontSize: '16px', 
                   fontWeight: 500
                 }}>
                   {traduzirSigla(id)}
                 </Typography>
                 <Typography sx={{ 
-                  color: '#7C7C7C', 
+                  color: cores.texto2, 
                   fontSize: '14px'
                 }}>
                   {apelidos[id] || traduzirSigla(id)}
@@ -450,45 +456,53 @@ useEffect(() => {
               </Box>
             ))
           ) : (
-            paradaSelecionada && getOpcoesRenomear(paradaSelecionada).map((opcao) => (
-              <Box 
-                key={opcao} 
-                onClick={() => handleEscolherOpcao(paradaSelecionada, opcao)}
-                sx={{ 
-                  backgroundColor: apelidos[paradaSelecionada] === opcao ? '#0845FF' : '#2A2A2A',
-                  borderRadius: '16px',
-                  padding: '14px 18px',
-                  marginBottom: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  border: '1px solid transparent',
-                  '&:hover': {
-                    borderColor: '#3A3A3A',
-                    backgroundColor: apelidos[paradaSelecionada] === opcao ? '#0037CC' : '#353535',
-                  }
-                }}
-              >
-                <Typography sx={{ 
-                  color: apelidos[paradaSelecionada] === opcao ? '#FFFFFF' : '#E0E0E0', 
-                  fontSize: '16px', 
-                  fontWeight: apelidos[paradaSelecionada] === opcao ? 600 : 500
-                }}>
-                  {opcao}
-                </Typography>
-                {apelidos[paradaSelecionada] === opcao && (
-                  <CheckIcon sx={{ color: '#FFFFFF', fontSize: '22px' }} />
-                )}
-              </Box>
-            ))
-          )}
+            paradaSelecionada && getOpcoesRenomear(paradaSelecionada).map((opcao) => {
+              const selecionado = apelidos[paradaSelecionada] === opcao;
+              return (
+                <Box 
+                  key={opcao} 
+                  onClick={() => handleEscolherOpcao(paradaSelecionada, opcao)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selecionado}
+                  onKeyDown={ativarComTeclado(() => handleEscolherOpcao(paradaSelecionada, opcao))}
+                  sx={{ 
+                    backgroundColor: selecionado ? cores.marcaContainer : 'transparent',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    minHeight: 56,
+                    marginBottom: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    border: selecionado ? `2px solid ${cores.marcaClara}` : `1px solid ${cores.superficie2}`,
+                    '&:hover': {
+                      backgroundColor: cores.superficie2,
+                    }
+                  }}
+                >
+                  <Typography sx={{ 
+                    color: cores.texto, 
+                    fontSize: '16px', 
+                    fontWeight: selecionado ? 600 : 500
+                  }}>
+                    {opcao}
+                  </Typography>
+                  {selecionado && (
+                    <CheckIcon sx={{ color: cores.texto, fontSize: '22px' }} />
+                  )}
+                </Box>
+              );
+            }))}
         </Box>
         
         {modoSelecao === 'lista' && (
           <Button 
-            className="modal-save-btn" 
+            variant="contained" 
+            size="large" 
+            fullWidth
             startIcon={<SaveIcon />} 
             onClick={handleSalvar}
             sx={{ 
@@ -496,11 +510,10 @@ useEffect(() => {
               flexShrink: 0
             }}
           >
-            SALVAR ALTERAÇÕES
+            Salvar alterações
           </Button>
         )}
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
@@ -541,23 +554,9 @@ const ordenada = [...filtrada].sort((a, b) => {
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
-      }}>
+    <Folha open={open} onClose={onClose}>
         <Typography sx={{ 
-          color: '#FFFFFF', 
+          color: cores.texto, 
           fontSize: '20px', 
           fontWeight: 700,
           mb: 2
@@ -576,7 +575,7 @@ const ordenada = [...filtrada].sort((a, b) => {
             background: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: '#3A3A3A',
+            background: cores.superficie3,
             borderRadius: '4px',
           }
         }}>
@@ -586,25 +585,29 @@ const ordenada = [...filtrada].sort((a, b) => {
               <Box 
                 key={id} 
                 onClick={() => handleToggle(id)}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isFav}
+                onKeyDown={ativarComTeclado(() => handleToggle(id))}
                 sx={{ 
-                  backgroundColor: isFav ? '#0845FF' : '#2A2A2A',
+                  backgroundColor: isFav ? cores.marcaContainer : 'transparent',
                   borderRadius: '16px',
-                  padding: '14px 18px',
+                  padding: '14px 16px',
+                  minHeight: 56,
                   marginBottom: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  border: '1px solid transparent',
+                  border: isFav ? `2px solid ${cores.marcaClara}` : `1px solid ${cores.superficie2}`,
                   '&:hover': {
-                    borderColor: isFav ? '#0037CC' : '#3A3A3A',
-                    backgroundColor: isFav ? '#0037CC' : '#353535',
+                    backgroundColor: cores.superficie2,
                   }
                 }}
               >
-                <Typography sx={{ 
-                  color: isFav ? '#FFFFFF' : '#E0E0E0', 
+                <Typography sx={{
+                  color: cores.texto, 
                   fontSize: '16px', 
                   fontWeight: isFav ? 600 : 500
                 }}>
@@ -612,7 +615,7 @@ const ordenada = [...filtrada].sort((a, b) => {
                 </Typography>
                 {isFav && (
                   <CheckIcon sx={{ 
-                    color: '#FFFFFF', 
+                    color: cores.texto, 
                     fontSize: '22px' 
                   }} />
                 )}
@@ -622,7 +625,9 @@ const ordenada = [...filtrada].sort((a, b) => {
         </Box>
         
         <Button 
-          className="modal-save-btn" 
+          variant="contained" 
+          size="large" 
+          fullWidth
           startIcon={<SaveIcon />} 
           onClick={handleSalvar}
           sx={{ 
@@ -630,35 +635,18 @@ const ordenada = [...filtrada].sort((a, b) => {
             flexShrink: 0
           }}
         >
-          SALVAR ALTERAÇÕES
+          Salvar alterações
         </Button>
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
 // ==================== COMPONENTE MODAL CARDÁPIO ====================
 const ModalCardapio = ({ open, onClose }) => {
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
+    <Folha open={open} onClose={onClose} sx={{ alignItems: 'center', justifyContent: 'center' }}>
         <Typography sx={{ 
-          color: '#FFFFFF', 
+          color: cores.texto, 
           fontSize: '24px', 
           fontWeight: 700,
           mb: 2,
@@ -678,7 +666,7 @@ const ModalCardapio = ({ open, onClose }) => {
           <Typography 
             variant="h6" 
             sx={{ 
-              color: '#7C7C7C', 
+              color: cores.texto2, 
               textAlign: 'center',
               fontWeight: 500,
               mb: 1
@@ -689,28 +677,29 @@ const ModalCardapio = ({ open, onClose }) => {
           <Typography 
             variant="body2" 
             sx={{ 
-              color: '#5A5A5A', 
+              color: cores.texto3, 
               textAlign: 'center',
               maxWidth: '280px'
             }}
           >
             Em breve você poderá consultar o cardápio do RU diretamente por aqui. <br/>
-            Por enquanto, acesse no <a href="https://cobalto.ufpel.edu.br/portal/cardapios/cardapioPublico" target="_blank" rel="noopener noreferrer">Cobalto</a>
+            Por enquanto, acesse no <a href="https://cobalto.ufpel.edu.br/portal/cardapios/cardapioPublico" target="_blank" rel="noopener noreferrer" style={{ color: cores.link }}>Cobalto</a>
           </Typography>
         </Box>
         
         <Button 
-          className="modal-save-btn" 
+          variant="contained" 
+          size="large" 
+          fullWidth
           onClick={onClose}
           sx={{ 
             mt: 2,
             flexShrink: 0
           }}
         >
-          FECHAR
+          Fechar
         </Button>
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
@@ -756,23 +745,9 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
-      }}>
+    <Folha open={open} onClose={onClose}>
         <Typography sx={{ 
-          color: '#FFFFFF', 
+          color: cores.texto, 
           fontSize: '20px', 
           fontWeight: 700,
           mb: 2
@@ -785,8 +760,8 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
             width: '100%',
             minHeight: '150px',
             maxHeight: '300px',
-            borderRadius: '12px',
-            border: '2px dashed #444',
+            borderRadius: '20px',
+            border: `1px dashed ${cores.superficie3}`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -795,10 +770,14 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
             position: 'relative',
             overflow: 'hidden',
             mb: 2,
-            backgroundColor: '#222',
+            backgroundColor: cores.superficie1,
             flexShrink: 0
           }}
           onClick={() => fileInputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          aria-label="Enviar foto da carteirinha"
+          onKeyDown={(e) => ativarComTeclado(() => fileInputRef.current?.click())(e)}
         >
           {preview ? (
             <img 
@@ -812,8 +791,8 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
             />
           ) : (
             <>
-              <CloudUploadIcon sx={{ fontSize: 48, color: '#555' }} />
-              <Typography variant="body2" sx={{ color: '#777', mt: 1, textAlign: 'center' }}>
+              <CloudUploadIcon sx={{ fontSize: 48, color: cores.texto3 }} />
+              <Typography variant="body2" sx={{ color: cores.texto2, mt: 1, textAlign: 'center' }}>
                 Clique para enviar sua carteirinha
               </Typography>
             </>
@@ -835,7 +814,6 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
             fullWidth 
             sx={{ 
               mb: 2, 
-              borderRadius: '12px',
               flexShrink: 0
             }}
           >
@@ -844,40 +822,27 @@ const ModalUploadCarteirinha = ({ open, onClose, onSave }) => {
         )}
         
         <Button 
-          className="modal-save-btn" 
+          variant="contained" 
+          size="large" 
+          fullWidth
           onClick={handleSalvar}
           sx={{ 
             mt: 'auto',
             flexShrink: 0
           }}
         >
-          SALVAR
+          Salvar
         </Button>
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
 // ==================== MODAL DE PARADAS ====================
 const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
-      }}>
+    <Folha open={open} onClose={onClose}>
         <Typography sx={{ 
-          color: '#FFFFFF', 
+          color: cores.texto, 
           fontSize: '20px', 
           fontWeight: 700,
           mb: 2
@@ -896,12 +861,12 @@ const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
             background: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: '#3A3A3A',
+            background: cores.superficie3,
             borderRadius: '4px',
           }
         }}>
           {paradasComEndereco.length === 0 ? (
-            <Typography sx={{ color: '#7C7C7C', textAlign: 'center', py: 4 }}>
+            <Typography sx={{ color: cores.texto2, textAlign: 'center', py: 4 }}>
               Nenhuma parada encontrada.
             </Typography>
           ) : (
@@ -910,13 +875,13 @@ const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
                 key={index} 
                 sx={{ 
                   py: 1.5,
-                  borderBottom: index < paradasComEndereco.length - 1 ? '1px solid #2A2A2A' : 'none'
+                  borderBottom: index < paradasComEndereco.length - 1 ? `1px solid ${cores.superficie2}` : 'none'
                 }}
               >
                 <Typography sx={{ 
                   fontSize: '16px', 
                   fontWeight: 600, 
-                  color: '#FFFFFF',
+                  color: cores.texto,
                   mb: 0.5
                 }}>
                   {traduzirSigla(item.id)}
@@ -924,7 +889,7 @@ const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
                 <Typography sx={{ 
                   fontSize: '13px', 
                   fontWeight: 400, 
-                  color: '#7C7C7C',
+                  color: cores.texto2,
                   lineHeight: 1.4
                 }}>
                   {item.endereco || 'Endereço não disponível'}
@@ -935,40 +900,27 @@ const ModalParadas = ({ open, onClose, paradasComEndereco }) => {
         </Box>
         
         <Button 
-          className="modal-save-btn" 
+          variant="contained" 
+          size="large" 
+          fullWidth
           onClick={onClose}
           sx={{ 
             mt: 2,
             flexShrink: 0
           }}
         >
-          FECHAR
+          Fechar
         </Button>
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
 // ==================== MODAL SAIBA MAIS ====================
 const ModalSaibaMais = ({ open, onClose }) => {
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={{
-        backgroundColor: '#1A1A1A',
-        borderRadius: '24px',
-        padding: '24px 20px 20px 20px',
-        maxWidth: '420px',
-        width: '100%',
-        margin: '0 16px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #2A2A2A',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-        overflow: 'hidden'
-      }}>
+    <Folha open={open} onClose={onClose}>
         <Typography sx={{ 
-          color: '#FFFFFF', 
+          color: cores.texto, 
           fontSize: '20px', 
           fontWeight: 700,
           mb: 2
@@ -987,19 +939,19 @@ const ModalSaibaMais = ({ open, onClose }) => {
             background: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: '#3A3A3A',
+            background: cores.superficie3,
             borderRadius: '4px',
           }
         }}>
-          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+          <Typography variant="body1" sx={{ color: cores.texto, lineHeight: 1.8, mb: 2 }}>
             Projeto desenvolvido para a disciplina de Design de Interação em 2026/1.
           </Typography>
           
-          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+          <Typography variant="body1" sx={{ color: cores.texto, lineHeight: 1.8, mb: 2 }}>
             Não armazenamos a imagem da sua carteirinha, fique tranquilo!
           </Typography>
           
-          <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+          <Typography variant="body1" sx={{ color: cores.texto, lineHeight: 1.8, mb: 2 }}>
             Para reportar bugs ou dar sugestões, entre no nosso grupo do WhatsApp:
           </Typography>
           <Link 
@@ -1007,15 +959,15 @@ const ModalSaibaMais = ({ open, onClose }) => {
             target="_blank"
             rel="noopener noreferrer"
             sx={{ 
-              color: '#0845FF',
-              fontWeight: 600,
+              color: cores.link,
+              fontWeight: 500,
               textDecoration: 'underline',
-              '&:hover': { color: '#0037CC' }
+              '&:hover': { color: cores.linkHover }
             }}
           >
             Clique aqui para entrar no grupo
           </Link>
-                <Typography variant="body1" sx={{ color: '#E0E0E0', lineHeight: 1.8, mb: 2 }}>
+                <Typography variant="body1" sx={{ color: cores.texto, lineHeight: 1.8, mb: 2 }}>
         Siga a gente no Instagram:
       </Typography>
       <Link
@@ -1023,12 +975,12 @@ const ModalSaibaMais = ({ open, onClose }) => {
         target="_blank"
         rel="noopener noreferrer"
         sx={{
-          color: '#0845FF',
-          fontWeight: 600,
+          color: cores.link,
+          fontWeight: 500,
           textDecoration: 'underline',
           mb: 2,
           display: 'inline-block',
-          '&:hover': { color: '#0037CC' }
+          '&:hover': { color: cores.linkHover }
         }}
       >
         @busepel.app
@@ -1036,17 +988,18 @@ const ModalSaibaMais = ({ open, onClose }) => {
         </Box>
         
         <Button 
-          className="modal-save-btn" 
+          variant="contained" 
+          size="large" 
+          fullWidth
           onClick={onClose}
           sx={{ 
             mt: 2,
             flexShrink: 0
           }}
         >
-          FECHAR
+          Fechar
         </Button>
-      </Box>
-    </Modal>
+    </Folha>
   );
 };
 
@@ -1056,8 +1009,10 @@ export default function HomePage() {
   const { todosItinerarios, paradasCoordenadas, idsParadasUnicas, favoritos, loading: appLoading } = useAppData();
   
   const [gpsAtivo, setGpsAtivo] = useState(true);
-  const { position } = useLocation({ ativo: gpsAtivo });
+  const { position, error: erroGps } = useLocation({ ativo: gpsAtivo });
   const jaPreencheuParadaRef = useRef(false);
+  const conteudoRef = useRef(null);
+  const temResultadosRef = useRef(false);
   const [modo, setModo] = useState('embarcar');
   const [tabLinha, setTabLinha] = useState('Anglo');
   const [origemId, setOrigemId] = useState('');
@@ -1134,7 +1089,7 @@ export default function HomePage() {
     return (typeof p === 'object' ? p.nome : p).toString().toLowerCase().trim();
   };
 
-  const navegarParaMapa = (it, horario, origem, destino, cat, modoAtual) => {
+  const navegarParaMapa = (it, horario, origem, destino, cat, modoAtual, origemEl) => {
     const itinerarioStr = encodeURIComponent(JSON.stringify(it));
     const params = new URLSearchParams({ 
       itinerario: itinerarioStr, 
@@ -1144,7 +1099,14 @@ export default function HomePage() {
       categoria: cat, 
       modo: modoAtual 
     });
-    navigate(`/mapa?${params.toString()}`);
+    transicionar('container', () => navigate(`/mapa?${params.toString()}`), { origem: origemEl });
+  };
+
+  const trocarModo = (novo) => { if (novo !== modo) transicionar('topo', () => setModo(novo)); };
+
+  const trocarLinha = (v) => {
+    const cats = Object.keys(categoriesConfig);
+    transicionar(cats.indexOf(v) > cats.indexOf(tabLinha) ? 'lateral-proximo' : 'lateral-anterior', () => setTabLinha(v), { regiao: conteudoRef.current });
   };
 
   useEffect(() => {
@@ -1178,6 +1140,13 @@ export default function HomePage() {
       }
     }
   }, [position, paradasCoordenadas, idsParadasUnicas, gpsAtivo, origemId]);
+
+  // Sem GPS a Home funciona; o usuário escolhe a parada manualmente
+  const [gpsAvisoFechado, setGpsAvisoFechado] = useState(false);
+  const alertaAtual = alertSnackbar ?? (erroGps && !position?.lat && !gpsAvisoFechado
+    ? { severity: 'warning', message: 'Não foi possível obter sua localização. Escolha a parada de embarque manualmente.' }
+    : null);
+  const fecharAlerta = () => { setAlertSnackbar(null); setGpsAvisoFechado(true); };
 
   const agrupamentoHorarios = useMemo(() => {
     const gruposNormal = {};
@@ -1446,12 +1415,12 @@ export default function HomePage() {
       
       if (matchesFiltrados.length > 0) {
         const minP = Math.min(...matchesFiltrados.map(m => m.numParadas));
-        setOpcoesEncontradas(
-          matchesFiltrados
-            .sort((a, b) => a.tempoRef - b.tempoRef)
-            .map(m => ({ ...m, maisRapida: m.numParadas === minP }))
-            .slice(0, 12)
-        );
+        const novas = matchesFiltrados
+          .sort((a, b) => a.tempoRef - b.tempoRef)
+          .map(m => ({ ...m, maisRapida: m.numParadas === minP }))
+          .slice(0, 12);
+        if (temResultadosRef.current) setOpcoesEncontradas(novas);
+        else transicionar('avancar', () => setOpcoesEncontradas(novas), { regiao: conteudoRef.current });
       } else {
         setOpcoesEncontradas([]);
       }
@@ -1469,19 +1438,30 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [opcoesEncontradas.length, handleBusca]);
 
-  if (appLoading || !position || !position.lat || !position.lng) {
+  useEffect(() => { temResultadosRef.current = opcoesEncontradas.length > 0; }, [opcoesEncontradas.length]);
+
+  if (appLoading || (!erroGps && (!position || !position.lat || !position.lng))) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 2, bgcolor: '#030303' }}>
-        <CircularProgress sx={{ color: '#0845FF' }} />
-        <Typography variant="body2" color="#fff" fontWeight="500">
-          Obtendo sua localização...
-        </Typography>
+      <Box className="home-page-bg" aria-busy="true">
+        <Box className="home-page-container">
+          <div className="brand-logo-container">
+            <img src="/buslogo.svg" alt="Busepel Logo" className="brand-logo" />
+          </div>
+          <div className="scroll-content">
+            <div className="screen-title">Embarque</div>
+            <Skeleton variant="rounded" height={113} sx={{ borderRadius: 'var(--raio-md)', mb: 2 }} />
+            <Skeleton variant="rounded" height={56} sx={{ borderRadius: 'var(--raio-pill)' }} />
+            <Typography variant="body2" color={cores.texto2} fontWeight="500" sx={{ mt: 2, textAlign: 'center' }}>
+              Obtendo sua localização...
+            </Typography>
+          </div>
+        </Box>
       </Box>
     );
   }
 
   return (
-    <ThemeProvider theme={theme}>
+    <>
       <Box className="home-page-bg">
         <Box className={`home-page-container ${modo !== 'embarcar' ? 'no-logo' : ''}`}>
           
@@ -1495,90 +1475,100 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="scroll-content">
+          <div className="scroll-content" ref={conteudoRef}>
             {/* MODO EMBARCAR */}
             {modo === 'embarcar' && (
               <>
                 <div className="screen-title">Embarque</div>
                 {opcoesEncontradas.length === 0 ? (
                   <>
-                    <div className="input-block-container">
-                      <FormControl fullWidth variant="standard">
-                        <Select 
-                          value={origemId} 
-                          onChange={e => setOrigemId(e.target.value)} 
-                          displayEmpty
-                          renderValue={(selected) => (
-                            <span style={{ color: selected ? '#FFFFFF' : '#7C7C7C' }}>
-                              {selected ? safeTraduzir(selected) : 'subir'}
-                            </span>
-                          )}
-                          disableUnderline
-                          sx={{ color: '#FFFFFF', fontSize: '18px' }}
-                        >
-                          {idsParadasUnicas.map(id => {
-                            const isFav = favoritos.includes(id);
-                            return (
-                              <MenuItem key={id} value={id}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <span>{safeTraduzir(id)}</span>
-                                  {isFav && <StarIcon sx={{ color: '#0845FF', fontSize: '20px' }} />}
-                                </Box>
-                              </MenuItem>
-                            );
-                          })}
-                        </Select>
-                      </FormControl>
+                    <div className="input-block-container aparecer">
+                      <span className="rota-conector" aria-hidden="true" />
+                      <div className="rota-linha">
+                        <TripOriginIcon className="rota-marcador" fontSize="small" />
+                        <FormControl fullWidth variant="standard">
+                          <Select 
+                            SelectDisplayProps={{ 'aria-label': 'Parada de embarque' }}
+                            value={origemId} 
+                            onChange={e => setOrigemId(e.target.value)} 
+                            displayEmpty
+                            renderValue={(selected) => (
+                              <span style={{ color: selected ? cores.texto : cores.texto2, fontWeight: selected ? 500 : 400 }}>
+                                {selected ? safeTraduzir(selected) : 'De onde?'}
+                              </span>
+                            )}
+                            disableUnderline
+                            sx={{ color: cores.texto, fontSize: '17px', fontWeight: 500 }}
+                          >
+                            {idsParadasUnicas.map(id => {
+                              const isFav = favoritos.includes(id);
+                              return (
+                                <MenuItem key={id} value={id}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <span>{safeTraduzir(id)}</span>
+                                    {isFav && <StarIcon sx={{ color: cores.texto, fontSize: '18px' }} />}
+                                  </Box>
+                                </MenuItem>
+                              );
+                            })}
+                          </Select>
+                        </FormControl>
+                      </div>
                       
-                      <div style={{ height: '1px', backgroundColor: '#7C7C7C', opacity: 0.3, width: '100%' }}></div>
+                      <div className="rota-divisor" />
                       
-                      <FormControl fullWidth variant="standard">
-                        <Select 
-                          value={destinoId} 
-                          onChange={e => setDestinoId(e.target.value)} 
-                          displayEmpty
-                          renderValue={(selected) => (
-                            <span style={{ color: selected ? '#FFFFFF' : '#7C7C7C' }}>
-                              {selected ? safeTraduzir(selected) : 'descer'}
-                            </span>
-                          )}
-                          disableUnderline
-                          sx={{ color: '#FFFFFF', fontSize: '18px' }}
-                        >
-                          {idsParadasUnicas.map(id => {
-                            const isFav = favoritos.includes(id);
-                            return (
-                              <MenuItem key={id} value={id}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <span>{safeTraduzir(id)}</span>
-                                  {isFav && <StarIcon sx={{ color: '#0845FF', fontSize: '20px' }} />}
-                                </Box>
-                              </MenuItem>
-                            );
-                          })}
-                        </Select>
-                      </FormControl>
+                      <div className="rota-linha">
+                        <LocationOnIcon className="rota-marcador" fontSize="small" />
+                        <FormControl fullWidth variant="standard">
+                          <Select 
+                            SelectDisplayProps={{ 'aria-label': 'Parada de desembarque' }}
+                            value={destinoId} 
+                            onChange={e => setDestinoId(e.target.value)} 
+                            displayEmpty
+                            renderValue={(selected) => (
+                              <span style={{ color: selected ? cores.texto : cores.texto2, fontWeight: selected ? 500 : 400 }}>
+                                {selected ? safeTraduzir(selected) : 'Para onde?'}
+                              </span>
+                            )}
+                            disableUnderline
+                            sx={{ color: cores.texto, fontSize: '17px', fontWeight: 500 }}
+                          >
+                            {idsParadasUnicas.map(id => {
+                              const isFav = favoritos.includes(id);
+                              return (
+                                <MenuItem key={id} value={id}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <span>{safeTraduzir(id)}</span>
+                                    {isFav && <StarIcon sx={{ color: cores.texto, fontSize: '18px' }} />}
+                                  </Box>
+                                </MenuItem>
+                              );
+                            })}
+                          </Select>
+                        </FormControl>
+                      </div>
                     </div>
 
                     <Button 
-                      className="action-btn-main" 
+                      className="aparecer"
                       fullWidth 
                       variant="contained" 
+                      size="large" 
                       onClick={handleBusca} 
                       disabled={buscando}
                     >
-                      {buscando ? <CircularProgress size={24} color="inherit" /> : 'Continuar...'}
+                      {buscando ? <CircularProgress size={24} color="inherit" /> : 'Buscar ônibus'}
                     </Button>
                   </>
                 ) : (
                   <>
                     <List disablePadding>
                       {opcoesEncontradas.map((opt, i) => (
-                        <BusItem key={i} opt={opt} safeTraduzir={safeTraduzir} onClick={() => navegarParaMapa(opt.it, opt.horario, origemId, destinoId, opt.cat, modo)} />
+                        <BusItem key={i} opt={opt} safeTraduzir={safeTraduzir} onClick={(e) => navegarParaMapa(opt.it, opt.horario, origemId, destinoId, opt.cat, modo, e.currentTarget.closest('.bus-item-card'))} />
                       ))}
                     </List>
-                    <Button fullWidth onClick={() => setOpcoesEncontradas([])} sx={{ mt: 2, color: '#0845FF', fontWeight: 'bold' }}>
-                      VOLTAR PARA BUSCA
+                    <Button fullWidth variant="outlined" onClick={() => transicionar('voltar', () => setOpcoesEncontradas([]), { regiao: conteudoRef.current })} sx={{ mt: 2 }}>
+                      Voltar para a busca
                     </Button>
                   </>
                 )}
@@ -1600,8 +1590,8 @@ export default function HomePage() {
                     <IconButton 
                       onClick={handleLogout} 
                       sx={{ 
-                        color: '#7C7C7C',
-                        '&:hover': { color: '#FF4444' },
+                        color: cores.texto2,
+                        '&:hover': { color: cores.perigo },
                         padding: '8px',
                         transition: 'color 0.2s'
                       }}
@@ -1614,6 +1604,10 @@ export default function HomePage() {
                 <div 
                   className="aluno-upload-area" 
                   onClick={() => setModalUploadOpen(true)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Enviar foto da carteirinha"
+                  onKeyDown={ativarComTeclado(() => setModalUploadOpen(true))}
                   style={{
                     border: 'none',
                     backgroundColor: 'transparent',
@@ -1637,16 +1631,16 @@ export default function HomePage() {
                         width: '100%', 
                         height: '100%', 
                         objectFit: 'contain',
-                        borderRadius: '12px'
+                        borderRadius: '20px'
                       }} 
                     />
                   ) : (
                     <div style={{
                       width: '100%',
                       minHeight: '150px',
-                      backgroundColor: '#2A2A2A',
-                      borderRadius: '16px',
-                      border: '2px dashed #444',
+                      backgroundColor: cores.superficie1,
+                      borderRadius: '20px',
+                      border: `1px dashed ${cores.superficie3}`,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -1654,9 +1648,9 @@ export default function HomePage() {
                       padding: '20px',
                       textAlign: 'center'
                     }}>
-                      <CloudUploadIcon sx={{ fontSize: 40, color: '#555' }} />
-                      <Typography variant="body2" sx={{ color: '#777', mt: 1 }}>
-                        Faça upload da sua<br/>carteirinha do cobalto aqui!
+                      <CloudUploadIcon sx={{ fontSize: 40, color: cores.texto3 }} />
+                      <Typography variant="body2" sx={{ color: cores.texto2, mt: 1 }}>
+                        Faça upload da sua<br/>carteirinha do Cobalto aqui!
                       </Typography>
                     </div>
                   )}
@@ -1685,13 +1679,14 @@ export default function HomePage() {
                     variant="body2"
                     onClick={() => setModalSaibaMaisOpen(true)}
                     sx={{
-                      color: '#ffffff',
+                      color: cores.link,
+                      fontWeight: 500,
                       textDecoration: 'underline',
                       fontSize: '14px',
                       cursor: 'pointer',
                       background: 'none',
                       border: 'none',
-                      '&:hover': { color: '#FFFFFF' }
+                      '&:hover': { color: cores.linkHover }
                     }}
                   >
                     Saiba mais
@@ -1703,7 +1698,7 @@ export default function HomePage() {
             {/* MODO VERIFICAR */}
             {modo === 'verificar' && (
               <>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box className="horarios-cabecalho" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <div className="screen-title" style={{ marginBottom: 0 }}>Horários</div>
                   
                   <Tooltip 
@@ -1715,8 +1710,8 @@ export default function HomePage() {
                     <IconButton 
                       onClick={() => setModalParadasOpen(true)} 
                       sx={{ 
-                        color: '#7C7C7C',
-                        '&:hover': { color: '#FFFFFF' },
+                        color: cores.texto2,
+                        '&:hover': { color: cores.texto },
                         padding: '8px'
                       }}
                     >
@@ -1726,7 +1721,7 @@ export default function HomePage() {
                         style={{ 
                           width: '32px', 
                           height: '32px',
-                          filter: 'brightness(0) saturate(100%) invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(90%) contrast(85%)'
+                          filter: 'brightness(0) invert(69%)'
                         }}
                       />
                     </IconButton>
@@ -1735,7 +1730,7 @@ export default function HomePage() {
                 
                 <Tabs 
                   value={tabLinha} 
-                  onChange={(e, v) => setTabLinha(v)} 
+                  onChange={(e, v) => trocarLinha(v)} 
                   className="custom-tabs" 
                   variant="scrollable" 
                   scrollButtons={false} 
@@ -1753,7 +1748,7 @@ export default function HomePage() {
                     </div>
                     <div className="grid-hours">
                       {g.horarios.map((obj, j) => (
-                        <Button key={j} className="hour-btn" variant="contained" onClick={() => navegarParaMapa(obj.it, obj.h, '', '', tabLinha, 'verificar')}>
+                        <Button key={j} className="hour-btn" variant="text" onClick={(e) => navegarParaMapa(obj.it, obj.h, '', '', tabLinha, 'verificar', e.currentTarget)}>
                           {obj.h}
                         </Button>
                       ))}
@@ -1766,7 +1761,7 @@ export default function HomePage() {
                     <div className="schedule-group-title">{g.label}</div>
                     <div className="grid-hours">
                       {g.horarios.map((obj, j) => (
-                        <Button key={j} className="hour-btn-outlined" variant="contained" onClick={() => navegarParaMapa(obj.it, obj.h, '', '', tabLinha, 'verificar')}>
+                        <Button key={j} className="hour-btn-outlined" variant="text" onClick={(e) => navegarParaMapa(obj.it, obj.h, '', '', tabLinha, 'verificar', e.currentTarget)}>
                           {obj.h}
                         </Button>
                       ))}
@@ -1778,7 +1773,7 @@ export default function HomePage() {
           </div>
 
           {/* ==================== ÁREA INFERIOR FIXA ==================== */}
-          <div className="bottom-fixed-area">
+          <div className="bottom-fixed-area aparecer">
             {modo === 'embarcar' && opcoesEncontradas.length === 0 && (
               <div className="rename-wrapper">
                 <Button className="rename-btn" startIcon={<EditIcon />} onClick={() => setModalRenomearOpen(true)}>
@@ -1787,63 +1782,18 @@ export default function HomePage() {
               </div>
             )}
 
-            <div className="bottom-nav-floating">
-              <Tooltip 
-                title="Embarque" 
-                placement="top"
-                enterDelay={300}
-                leaveDelay={200}
-              >
-                <button 
-                  className={`nav-icon-btn ${modo === 'embarcar' ? 'active' : ''}`} 
-                  onClick={() => setModo('embarcar')}
-                >
-                  <img 
-                    src={modo === 'embarcar' ? '/busativo.svg' : '/businativo.svg'} 
-                    alt="Embarque" 
-                    className="nav-icon-bus" 
-                  />
-                </button>
-              </Tooltip>
-              
-              <Tooltip 
-                title="Perfil" 
-                placement="top"
-                enterDelay={300}
-                leaveDelay={200}
-              >
-                <button 
-                  className={`nav-icon-btn ${modo === 'aluno' ? 'active' : ''}`} 
-                  onClick={() => setModo('aluno')}
-                >
-                  <img 
-                    src={modo === 'aluno' ? '/perfilativo.svg' : '/perfilinativo.svg'} 
-                    alt="Perfil" 
-                    className="nav-icon-profile" 
-                  />
-                </button>
-              </Tooltip>
-              
-              <Tooltip 
-                title="Rotas" 
-                placement="top"
-                enterDelay={300}
-                leaveDelay={200}
-              >
-                <button 
-                  className={`nav-icon-btn ${modo === 'verificar' ? 'active' : ''}`} 
-                  onClick={() => setModo('verificar')}
-                >
-                  <img 
-                    src={modo === 'verificar' ? '/rotativo.svg' : '/rotainativo.svg'} 
-                    alt="Rotas" 
-                    className="nav-icon-route" 
-                  />
-                </button>
-              </Tooltip>
-            </div>
+            <nav className="tab-bar" aria-label="Navegação principal">
+              <button type="button" className={`tab-bar-item ${modo === 'embarcar' ? 'ativo' : ''}`} aria-current={modo === 'embarcar' ? 'page' : undefined} onClick={() => trocarModo('embarcar')}>
+                <DirectionsBusFilledIcon aria-hidden="true" /><span>Embarque</span>
+              </button>
+              <button type="button" className={`tab-bar-item ${modo === 'aluno' ? 'ativo' : ''}`} aria-current={modo === 'aluno' ? 'page' : undefined} onClick={() => trocarModo('aluno')}>
+                <PersonIcon aria-hidden="true" /><span>Perfil</span>
+              </button>
+              <button type="button" className={`tab-bar-item ${modo === 'verificar' ? 'ativo' : ''}`} aria-current={modo === 'verificar' ? 'page' : undefined} onClick={() => trocarModo('verificar')}>
+                <ScheduleIcon aria-hidden="true" /><span>Horários</span>
+              </button>
+            </nav>
           </div>
-
         </Box>
       </Box>
 
@@ -1890,20 +1840,20 @@ export default function HomePage() {
 
       {/* SNACKBAR DE ALERTA */}
       <Snackbar
-        open={!!alertSnackbar}
+        open={!!alertaAtual}
         autoHideDuration={4000}
-        onClose={() => setAlertSnackbar(null)}
+        onClose={() => fecharAlerta()}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         sx={{ mt: 10 }}
       >
         <Alert 
-          onClose={() => setAlertSnackbar(null)} 
-          severity={alertSnackbar?.severity || 'info'} 
-          sx={{ width: '100%', fontWeight: 'bold' }}
+          onClose={() => fecharAlerta()} 
+          severity={alertaAtual?.severity || 'info'} 
+          sx={{ width: '100%' }}
         >
-          {alertSnackbar?.message}
+          {alertaAtual?.message}
         </Alert>
       </Snackbar>
-    </ThemeProvider>
+    </>
   );
 }
